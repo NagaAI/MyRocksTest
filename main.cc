@@ -6,7 +6,8 @@
 
 using namespace std;
 
-int main() {
+extern size_t thread_cnt;
+int main(int argc, char* argv[]) {
   printf("start connecting...\n");
   Mysql client;
   if (!client.connect()) {
@@ -14,12 +15,18 @@ int main() {
     return -1;
   }
   printf("conn succ\n");
-  //for (int i = 0; i < 5; i++)
-  //CreateTable();
+  thread_cnt = 1;
+  if (argc > 2) {
+    printf("usage:  $ main [thread_cnt]\n");
+    return -1;
+  } else if (argc == 2) {
+    thread_cnt = stol(argv[1]);
+    if (thread_cnt > 50) {
+      printf("thread cnt toooo large\n");
+      return -1;
+    }
+  }
   Init();
-  printf("start insert...\n");
-  Insert();
-  printf("insert done\n");
-  
+  StartStress();
   return 0;
 }
