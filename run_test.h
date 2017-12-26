@@ -6,7 +6,7 @@
 extern size_t thread_cnt;
 extern void Init();
 extern void StartStress();
-extern void CreateTable();
+extern void CreateTable(int);
 extern void DropTable();
 extern void Insert();
 extern void Delete();

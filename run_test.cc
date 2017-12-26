@@ -23,11 +23,11 @@ vector<string> contents;
 
 struct TableInfo {
   string name;
-  mutex lock;
+  recursive_mutex lock;
   TableInfo(const std::string& str) : name(str) {}
 };
 map<string, TableInfo*> lock_table;
-mutex g_lock;
+recursive_mutex g_lock;
 
 size_t thread_cnt;
 
@@ -66,7 +66,7 @@ string TablePrefix = "terark_";
 
 void Init() {
   srand (time(NULL));
-  string path = "./lineitem.tbl";
+  string path = "./lineitem_2m.tbl";
   ifstream in(path.c_str());
   string line;
   while (getline(in, line)) {
@@ -81,7 +81,7 @@ void execute(int tid) {
     int type = rand() % 7;
     switch (type) {
     case kCreateTable:
-      CreateTable();
+      CreateTable(-1);
       break;
     case kDropTable:
       DropTable();
@@ -114,7 +114,7 @@ void StartStress() {
  * only for test, no thread id kept
  */
 bool try_lock(const std::string& table) {
-  std::lock_guard<std::mutex> lock(g_lock);
+  std::lock_guard<std::recursive_mutex> lock(g_lock);
   if (lock_table.count(table) == 0) {
     TableInfo* tinfo = new TableInfo(table);
     tinfo->lock.lock();
@@ -127,18 +127,21 @@ bool try_lock(const std::string& table) {
 }
 
 void release_lock(const std::string& table) {
-  std::lock_guard<std::mutex> lock(g_lock);
+  std::lock_guard<std::recursive_mutex> lock(g_lock);
   if (lock_table.count(table) == 0)
     return;
   else
     lock_table[table]->lock.unlock();
 }
 
-void CreateTable() {
-  int idx = rand() % kTableLimit;
+void CreateTable(int idx) {
+  if (idx == -1)
+    idx = rand() % kTableLimit;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
+
+  printf("CreateTable: terark_%d\n", idx);
   stringstream ss;
   ss << "(id BIGINT NOT NULL AUTO_INCREMENT, "
      << "L_ORDERKEY    INT NOT NULL, "
@@ -167,7 +170,7 @@ void CreateTable() {
      << "KEY (L_SUPPKEY),"
      << "KEY (L_SUPPKEY, L_ORDERKEY),"
      << "KEY (L_SUPPKEY, L_PARTKEY));";
-  string stmt = "create table " + table + ss.str();
+  string stmt = "create table if not exists " + table + ss.str();
   Mysql client;
   if (!client.connect()) {
     printf("CreateTable(): conn failed\n");
@@ -176,6 +179,7 @@ void CreateTable() {
   MYSQL_STMT* m_stmt = client.prepare(stmt);
   client.execute(m_stmt);
   release_lock(table);
+  printf("done CreateTable: terark_%d\n", idx);
 }
 
 void DropTable() {
@@ -183,7 +187,8 @@ void DropTable() {
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
-  string stmt = "drop table " + table;
+  printf("Drop table: terark_%d\n", idx);
+  string stmt = "drop table if exists " + table;
   Mysql client;
   if (!client.connect()) {
     printf("DropTable(): conn failed\n");
@@ -192,6 +197,7 @@ void DropTable() {
   MYSQL_STMT* m_stmt = client.prepare(stmt);
   client.execute(m_stmt);
   release_lock(table);
+  printf("done Drop table: terark_%d\n", idx);
 }
 
 /*
@@ -209,10 +215,14 @@ void Insert() {
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
+  CreateTable(idx);
+  
   string str_stmt = "Insert into " + table +
-    " values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+    " values(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
   MYSQL_STMT* stmt = client.prepare(str_stmt);
   int row_start = rand() % contents.size();
+  int limit = min<size_t>(kLineLimit, contents.size() - row_start + 1);
+  printf("Insert table: terark_%d, cnt %d\n", idx, limit);
   for (int cnt = 0; cnt < kLineLimit; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
@@ -248,6 +258,7 @@ void Insert() {
   }
   client.release_stmt(stmt);
   release_lock(table);
+  printf("done Insert table: terark_%d\n", idx);
 }
 
 void Delete() {
