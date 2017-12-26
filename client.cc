@@ -2,6 +2,7 @@
 // Created by wangfo on 17-7-21.
 //
 
+#include <assert.h>
 #include "client.h"
 
 
@@ -35,6 +36,16 @@ MYSQL_STMT* Mysql::prepare(std::string query) {
   return stmt;
 }
 
+bool Mysql::release_stmt(MYSQL_STMT* stmt) {
+  assert(stmt != nullptr);
+  int err = mysql_stmt_close(stmt);
+  if (err) {
+    fprintf(stderr, "ERROR: mysql_stmt_close(%s) = %s \n", mysql_error(g_conn));
+    return false;
+  }
+  return true;
+}
+
 void Mysql::bind_arg(MYSQL_BIND &b, const int &val) {
   memset(&b, 0, sizeof(b));
   b.buffer_length = 4;
@@ -49,7 +60,7 @@ void Mysql::bind_arg(MYSQL_BIND &b, const double &val) {
   b.buffer = (void *)&val;
 }
 
-void Mysql::bind_arg(MYSQL_BIND &b, char *val, size_t length) {
+void Mysql::bind_arg(MYSQL_BIND &b, const char *val, size_t length) {
   memset(&b, 0, sizeof(b));
   b.buffer_length = length;
   b.buffer_type =  MYSQL_TYPE_STRING;
@@ -61,13 +72,13 @@ void Mysql::execute(MYSQL_STMT *stmt) {
     fprintf(stderr, "ERROR: mysql stmt execute = %s\n", mysql_stmt_error(stmt));
     //exit(1);
   }
-  if (mysql_stmt_store_result(stmt)) {
-    fprintf(stderr, "ERROR: mysql stmt store result = %s\n", mysql_stmt_error(stmt));
+  //if (mysql_stmt_store_result(stmt)) {
+  //  fprintf(stderr, "ERROR: mysql stmt store result = %s\n", mysql_stmt_error(stmt));
     //exit(1);
-  }
+  //}
 }
 void Mysql::bind_execute(MYSQL_STMT *stmt, MYSQL_BIND *params) {
-  if (mysql_stmt_bind_result(stmt, params)) {
+  if (mysql_stmt_bind_param(stmt, params)) {
     fprintf(stderr, "ERROR: mysql stmt bind = %s\n", mysql_stmt_error(stmt));
     exit(1);
   }

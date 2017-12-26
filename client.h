@@ -61,9 +61,10 @@ private:
 
 public:
   MYSQL_STMT *prepare(std::string query);
+  bool release_stmt(MYSQL_STMT* stmt);
   void bind_arg(MYSQL_BIND &b, const int &val);
   void bind_arg(MYSQL_BIND &b, const double &val);
-  void bind_arg(MYSQL_BIND &b, char *val, size_t length);
+  void bind_arg(MYSQL_BIND &b, const char *val, size_t length);
   void execute(MYSQL_STMT *stmt);
   void bind_execute(MYSQL_STMT *stmt, MYSQL_BIND *params);
   std::string str = R"foo(123)foo";

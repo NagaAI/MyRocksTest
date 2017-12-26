@@ -13,8 +13,13 @@ int main() {
     printf("conn failed\n");
     return -1;
   }
-  for (int i = 0; i < 5; i++)
-    CreateTable();
   printf("conn succ\n");
+  //for (int i = 0; i < 5; i++)
+  //CreateTable();
+  Init();
+  printf("start insert...\n");
+  Insert();
+  printf("insert done\n");
+  
   return 0;
 }
