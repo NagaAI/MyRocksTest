@@ -30,8 +30,8 @@ MYSQL_STMT* Mysql::prepare(std::string query) {
   int err = mysql_stmt_prepare(stmt, query.c_str(), query.size());
   if (err) {
     fprintf(stderr, "ERROR: mysql_stmt_prepare(%s) = %s \n", query.c_str(), mysql_error(g_conn));
-    mysql_stmt_close(stmt);
-    exit(1);
+    //mysql_stmt_close(stmt);
+    //exit(1);
   }
   return stmt;
 }
@@ -40,7 +40,7 @@ bool Mysql::release_stmt(MYSQL_STMT* stmt) {
   assert(stmt != nullptr);
   int err = mysql_stmt_close(stmt);
   if (err) {
-    fprintf(stderr, "ERROR: mysql_stmt_close(%s) = %s \n", mysql_error(g_conn));
+    fprintf(stderr, "ERROR: mysql_stmt_close() = %s \n", mysql_error(g_conn));
     return false;
   }
   return true;
@@ -85,34 +85,6 @@ void Mysql::bind_execute(MYSQL_STMT *stmt, MYSQL_BIND *params) {
   execute(stmt);
 }
 
-/*bool Mysql::get_one(ThreadState *state)
-{
-  //bind in params: page_id
-  //MYSQL_BIND in_params[1];
-  //int key_page_id = atoi(state->key.c_str());
-  bind_arg(get_one_in_params[0], state->key);
-  if (mysql_stmt_bind_param(get_one_stmt, get_one_in_params)) {
-    fprintf(stderr, "ERROR: mysql stmt bind params = %s\n", mysql_stmt_error(get_one_stmt));
-    exit(1);
-  }
-  bind_execute_store(get_one_stmt, get_one_out_params);
-
-  int status = mysql_stmt_fetch(get_one_stmt);
-  if (status == MYSQL_NO_DATA) {
-    fprintf(stderr, "ERROR: there are no data to fetch\n");
-  } else if (status == MYSQL_DATA_TRUNCATED) {
-    fprintf(stderr, "ERROR: data truncated\n");
-  }
-*/
-//  while (!status) {
-//    printf("page_id: %d\npage_title: %s\nrevision_id: %d\ntext_id: %d\ntext: %s\n",
-//          page_id, page_title, revision_id, text_id, "...text..."/*text*/);
-//    status = mysql_stmt_fetch(get_one_stmt);
-//  }
-
-//return true;
-//}
-
 bool Mysql::get_all_keys(std::vector<int> *vec)
 {
   MYSQL_STMT *stmt = prepare("select page_id from page");
@@ -138,3 +110,4 @@ bool Mysql::get_all_keys(std::vector<int> *vec)
   mysql_stmt_close(stmt);
   return true;
 }
+

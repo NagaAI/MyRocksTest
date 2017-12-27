@@ -10,5 +10,6 @@ extern void CreateTable(int);
 extern void DropTable();
 extern void Insert();
 extern void Delete();
+extern void Query();
 
 #endif

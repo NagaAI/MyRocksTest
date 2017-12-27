@@ -60,12 +60,15 @@ enum field_t {
   kComment
 };
 
-const int kTableLimit = 10;
-const int kLineLimit = 1000;
+const int kTableLimit = 100;
+const int kLineLimit = 10000;
 string TablePrefix = "terark_";
+
+void QueryExecute(Mysql& client, const std::string& str, int idx1, int idx2);
 
 void Init() {
   srand (time(NULL));
+  // read in data
   string path = "./lineitem_2m.tbl";
   ifstream in(path.c_str());
   string line;
@@ -74,6 +77,18 @@ void Init() {
       continue;
     contents.push_back(line);
   }
+  // create database
+  /*Mysql client;
+  if (!client.connect()) {
+    printf("CreateTable(): conn failed\n");
+    exit(-1);
+  }
+  if (mysql_query(client, "CREATE DATABASE if not exist t_test")) {
+    fprintf(stderr, "%s\n", mysql_error(con));
+    mysql_close(con);
+    exit(1);
+  }
+  */
 }
 
 void execute(int tid) {
@@ -90,7 +105,7 @@ void execute(int tid) {
       Insert();
       break;
     case kQuery:
-      //Query();
+      Query();
       break;
     }
   }
@@ -265,7 +280,8 @@ void Delete() {
 }
 
 // query with primary key? or secondary key
-/*void Query() {
+
+void Query() {
   Mysql client;
   if (!client.connect()) {
     printf("Query(): conn failed\n");
@@ -275,45 +291,57 @@ void Delete() {
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
-  string str_stmt = "Insert into " + table +
-    " values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
-  MYSQL_STMT* stmt = client.prepare(str_stmt);
+  CreateTable(idx);
+
+  {
+    string stmt = "select * from " + table +
+      " where L_ORDERKEY = ? and L_PARTKEY = ?";
+    QueryExecute(client, stmt, kOrderKey, kPartKey);
+  }
+  {
+    string stmt = "select * from " + table +
+      " where L_SUPPKEY = ? and L_PARTKEY = ?";
+    QueryExecute(client, stmt, kSuppKey, kPartKey);
+  }
+  {
+    string stmt = "select * from " + table +
+      " where id = ?";
+    QueryExecute(client, stmt, -1, -1);
+  }
+  {
+    string stmt = "select * from " + table +
+      " where L_ORDERKEY = ?";
+    QueryExecute(client, stmt, kOrderKey, -1);
+  }
+  release_lock(table);
+  printf("done Query table: terark_%d\n", idx);
+}
+
+void QueryExecute(Mysql& client, const std::string& str, int idx1, int idx2) {
+  MYSQL_STMT* stmt = client.prepare(str);
   int row_start = rand() % contents.size();
+  int limit = min<size_t>(kLineLimit, contents.size() - row_start + 1);
+  printf("Query table: stmt %s, cnt %d\n", str.c_str(), limit);
   for (int cnt = 0; cnt < kLineLimit; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
-    MYSQL_BIND in_params[17];
-    memset(in_params, 0, sizeof(in_params));
     string& line = contents[cnt + row_start];
     std::vector<std::string> results;
     boost::split(results, line, [](char c){return c == '|';});
-
-    client.bind_arg(in_params[0], stoi(results[kOrderKey]));
-    client.bind_arg(in_params[1], stoi(results[kPartKey]));
-
-    client.bind_arg(in_params[2], stoi(results[kSuppKey]));
-    client.bind_arg(in_params[3], stoi(results[kLineNumber]));
-
-    client.bind_arg(in_params[4], stod(results[kQuantity]));
-    client.bind_arg(in_params[5], stod(results[kExtendedPrice]));
-    client.bind_arg(in_params[6], stod(results[kDiscount]));
-    client.bind_arg(in_params[7], stod(results[kTax]));
-
-    client.bind_arg(in_params[8], results[kReturnFlag].c_str(), 1);
-    client.bind_arg(in_params[9], results[kLineStatus].c_str(), 1);
-
-    // shipdate = 10
-    // commitdate = 11
-    // receipt = 12
-
-    client.bind_arg(in_params[13], results[kShipinStruct].c_str(), 25);
-    client.bind_arg(in_params[14], results[kShipMode].c_str(), 10);
-    client.bind_arg(in_params[15], results[kComment].c_str(), 512);
-
-    client.bind_execute(stmt, in_params);
+    if (idx1 != -1 && idx2 != -1) {
+      MYSQL_BIND in_params[2];
+      client.bind_arg(in_params[0], stoi(results[idx1]));
+      client.bind_arg(in_params[1], stoi(results[idx2]));
+      client.bind_execute(stmt, in_params);
+    } else if (idx1 != -1) {
+      MYSQL_BIND in_params[1];
+      client.bind_arg(in_params[0], stoi(results[idx1]));
+      client.bind_execute(stmt, in_params);
+    } else {
+      MYSQL_BIND in_params[1];
+      client.bind_arg(in_params[0], cnt + row_start);
+      client.bind_execute(stmt, in_params);
+    }
   }
   client.release_stmt(stmt);
-  release_lock(table);
 }
-*/
-
