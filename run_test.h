@@ -8,6 +8,7 @@ extern void Init();
 extern void StartStress();
 extern void CreateTable(int);
 extern void DropTable();
+extern void AlterTable();
 extern void Insert();
 extern void Delete();
 extern void Query();

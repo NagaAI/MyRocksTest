@@ -65,6 +65,7 @@ const int kLineLimit = 10000;
 string TablePrefix = "terark_";
 
 void QueryExecute(Mysql& client, const std::string& str, int idx1, int idx2);
+void AlterExecute(Mysql& client, const std::string& stmt);
 
 void Init() {
   srand (time(NULL));
@@ -101,8 +102,14 @@ void execute(int tid) {
     case kDropTable:
       DropTable();
       break;
+    case kAlterTable:
+      AlterTable();
+      break;
     case kInsert:
       Insert();
+      break;
+    case kDelete:
+      Delete();
       break;
     case kQuery:
       Query();
@@ -176,15 +183,15 @@ void CreateTable(int idx) {
      << "L_SHIPMODE     CHAR(10) NOT NULL,"
      << "L_COMMENT      VARCHAR(512) NOT NULL,"
      << "PRIMARY KEY (id),"
-     << "KEY (L_ORDERKEY, L_PARTKEY),"
-     << "KEY (L_ORDERKEY),"
-     << "KEY (L_ORDERKEY, L_SUPPKEY),"
-     << "KEY (L_PARTKEY),"
-     << "KEY (L_PARTKEY, L_ORDERKEY),"
-     << "KEY (L_PARTKEY, L_SUPPKEY),"
-     << "KEY (L_SUPPKEY),"
-     << "KEY (L_SUPPKEY, L_ORDERKEY),"
-     << "KEY (L_SUPPKEY, L_PARTKEY));";
+     << "INDEX L_ORDER_PART (L_ORDERKEY, L_PARTKEY),"
+     << "INDEX L_ORDER  (L_ORDERKEY),"
+     << "INDEX L_ORDER_SUPP (L_ORDERKEY, L_SUPPKEY),"
+     << "INDEX PART (L_PARTKEY),"
+     << "INDEX PART_ORDER (L_PARTKEY, L_ORDERKEY),"
+     << "INDEX PART_SUPP (L_PARTKEY, L_SUPPKEY),"
+     << "INDEX SUPP (L_SUPPKEY),"
+     << "INDEX SUPP_ORDER (L_SUPPKEY, L_ORDERKEY),"
+     << "INDEX SUPP_PART (L_SUPPKEY, L_PARTKEY));";
   string stmt = "create table if not exists " + table + ss.str();
   Mysql client;
   if (!client.connect()) {
@@ -213,6 +220,48 @@ void DropTable() {
   client.execute(m_stmt);
   release_lock(table);
   printf("done Drop table: terark_%d\n", idx);
+}
+
+void AlterTable() {
+  int idx = rand() % kTableLimit;
+  string table = TablePrefix + to_string(idx);
+  if (!try_lock(table))
+    return;
+  CreateTable(idx);
+  Mysql client;
+  if (!client.connect()) {
+    printf("AlterTable(): conn failed\n");
+    return;
+  }
+  printf("Alter table: terark_%d\n", idx);
+  {
+    string stmt = "drop index PART on " + table + ";";
+    AlterExecute(client, stmt);
+    printf("Alter table: terark_%d, drop PART done\n", idx);
+  }
+  {
+    string stmt = "drop index PART_ORDER on " + table + ";";
+    AlterExecute(client, stmt);
+    printf("Alter table: terark_%d, drop PART_ORDER done\n", idx);
+  }
+  {
+    string stmt = "create index PART on " + table + " (L_PARTKEY);";
+    AlterExecute(client, stmt);
+    printf("Alter table: terark_%d, create index PART done\n", idx);
+  }
+  {
+    string stmt = "create index PART_ORDER on " + table + "(L_PARTKEY, L_ORDERKEY);";
+    AlterExecute(client, stmt);
+    printf("Alter table: terark_%d, create composite index PART_ORDER done\n", idx);
+  }
+  release_lock(table);
+  printf("done Alter table: terark_%d\n", idx);
+}
+
+void AlterExecute(Mysql& client, const std::string& stmt) {
+  MYSQL_STMT* m_stmt = client.prepare(stmt);
+  client.execute(m_stmt);
+  client.release_stmt(m_stmt);
 }
 
 /*
@@ -277,10 +326,31 @@ void Insert() {
 }
 
 void Delete() {
+  Mysql client;
+  if (!client.connect()) {
+    printf("Delete(): conn failed\n");
+    return;
+  }
+  int idx = rand() % kTableLimit;
+  string table = TablePrefix + to_string(idx);
+  if (!try_lock(table))
+    return;
+  CreateTable(idx);
+  {
+    string stmt = "delete from " + table +
+      " where L_ORDERKEY = ? and L_PARTKEY = ?";
+    QueryExecute(client, stmt, kOrderKey, kPartKey);
+  }
+  {
+    string stmt = "delete from " + table +
+      " where id = ?";
+    QueryExecute(client, stmt, -1, -1);
+  }
+  release_lock(table);
+  printf("done Delete: terark_%d\n", idx);
 }
 
 // query with primary key? or secondary key
-
 void Query() {
   Mysql client;
   if (!client.connect()) {
@@ -321,7 +391,7 @@ void QueryExecute(Mysql& client, const std::string& str, int idx1, int idx2) {
   MYSQL_STMT* stmt = client.prepare(str);
   int row_start = rand() % contents.size();
   int limit = min<size_t>(kLineLimit, contents.size() - row_start + 1);
-  printf("Query table: stmt %s, cnt %d\n", str.c_str(), limit);
+  printf("table: stmt %s, cnt %d\n", str.c_str(), limit);
   for (int cnt = 0; cnt < kLineLimit; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
