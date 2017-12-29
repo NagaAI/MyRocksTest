@@ -29,7 +29,9 @@ struct TableInfo {
 map<string, TableInfo*> lock_table;
 recursive_mutex g_lock;
 
-size_t thread_cnt;
+size_t thread_cnt = 1;
+size_t table_limit = 100;
+size_t insert_cnt = 10000;
 
 enum op_type_t {
   kCreateTable = 0,
@@ -60,8 +62,6 @@ enum field_t {
   kComment
 };
 
-const int kTableLimit = 100;
-const int kLineLimit = 10000;
 string TablePrefix = "terark_";
 
 void QueryExecute(Mysql& client, const std::string& str, int idx1, int idx2);
@@ -158,7 +158,7 @@ void release_lock(const std::string& table) {
 
 void CreateTable(int idx) {
   if (idx == -1)
-    idx = rand() % kTableLimit;
+    idx = rand() % table_limit;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
@@ -205,7 +205,7 @@ void CreateTable(int idx) {
 }
 
 void DropTable() {
-  int idx = rand() % kTableLimit;
+  int idx = rand() % table_limit;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
@@ -223,7 +223,7 @@ void DropTable() {
 }
 
 void AlterTable() {
-  int idx = rand() % kTableLimit;
+  int idx = rand() % table_limit;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
@@ -234,6 +234,11 @@ void AlterTable() {
     return;
   }
   printf("Alter table: terark_%d\n", idx);
+  {
+    string stmt = "create index ORDER_LINE on " + table + " (L_ORDERKEY, L_LINENUMBER);";
+    AlterExecute(client, stmt);
+    printf("Alter table: terark_%d, create index ORDER_LINE done\n", idx);
+  }
   {
     string stmt = "drop index PART on " + table + ";";
     AlterExecute(client, stmt);
@@ -275,7 +280,7 @@ void Insert() {
     printf("Insert(): conn failed\n");
     return;
   }
-  int idx = rand() % kTableLimit;
+  int idx = rand() % table_limit;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
@@ -285,9 +290,9 @@ void Insert() {
     " values(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
   MYSQL_STMT* stmt = client.prepare(str_stmt);
   int row_start = rand() % contents.size();
-  int limit = min<size_t>(kLineLimit, contents.size() - row_start + 1);
+  int limit = min<size_t>(insert_cnt, contents.size() - row_start + 1);
   printf("Insert table: terark_%d, cnt %d\n", idx, limit);
-  for (int cnt = 0; cnt < kLineLimit; cnt++) {
+  for (int cnt = 0; cnt < insert_cnt; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
     MYSQL_BIND in_params[17];
@@ -331,7 +336,7 @@ void Delete() {
     printf("Delete(): conn failed\n");
     return;
   }
-  int idx = rand() % kTableLimit;
+  int idx = rand() % table_limit;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
@@ -357,7 +362,7 @@ void Query() {
     printf("Query(): conn failed\n");
     return;
   }
-  int idx = rand() % kTableLimit;
+  int idx = rand() % table_limit;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
@@ -390,9 +395,9 @@ void Query() {
 void QueryExecute(Mysql& client, const std::string& str, int idx1, int idx2) {
   MYSQL_STMT* stmt = client.prepare(str);
   int row_start = rand() % contents.size();
-  int limit = min<size_t>(kLineLimit, contents.size() - row_start + 1);
+  int limit = min<size_t>(insert_cnt, contents.size() - row_start + 1);
   printf("table: stmt %s, cnt %d\n", str.c_str(), limit);
-  for (int cnt = 0; cnt < kLineLimit; cnt++) {
+  for (int cnt = 0; cnt < insert_cnt; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
     string& line = contents[cnt + row_start];
