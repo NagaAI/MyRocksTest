@@ -1,7 +1,7 @@
 
 
 CXX=g++
-CXXFLAGS=-g -std=c++11 -O2
+CXXFLAGS=-g3 -std=c++11
 INCLUDE=-I. -I/usr/include/mysql -I/disk/terark-home/Programs/boost_1_62_0
 LIB=-L/newssd1/temp/mysql-on-terarkdb-4.8-bmi2-0/lib
 OBJS=run_test.o client.o

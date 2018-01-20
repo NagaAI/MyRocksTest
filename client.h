@@ -43,6 +43,7 @@ private:
   const char *user = "root";
   const char *passwd = "";
   const char *db = "tpch";
+  //const unsigned int port = 3316;
   const unsigned int port = 3307;
 
   MYSQL *g_conn;

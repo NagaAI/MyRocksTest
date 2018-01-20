@@ -35,7 +35,7 @@ atomic<long> total_rounds = { 0 };
 atomic<long> total_elapse = { 0 };
 size_t thread_cnt = 4;
 size_t table_limit = 100;
-size_t insert_cnt = 1000;
+size_t insert_cnt = 100;
 
 enum op_type_t {
   kCreateTable = 0,
@@ -66,7 +66,8 @@ enum field_t {
   kComment
 };
 
-string TablePrefix = "terark_";
+//string TablePrefix = "terark_";
+string TablePrefix = "lineitem";
 
 void QueryExecute(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2);
 void AlterExecute(Mysql& client, const std::string& stmt);
@@ -110,46 +111,92 @@ void execute(int tid) {
   }
 }
 
+MYSQL_STMT* gen_stmt(Mysql& client, int sel) {
+  int idx = rand() % table_limit + 1;
+  string table = TablePrefix + to_string(idx);
+  string str_stmt;
+  switch (sel) {
+  case 0:
+    str_stmt = "select * from " + table +
+	" where L_ORDERKEY = ? and L_PARTKEY = ?";
+    return client.prepare(str_stmt);
+  case 1:
+    str_stmt = "select * from " + table +
+	" where L_SUPPKEY = ? and L_PARTKEY = ?";
+    return client.prepare(str_stmt);
+  case 2:
+    str_stmt = "select * from " + table +
+	" where L_ORDERKEY = ?";
+    return client.prepare(str_stmt);
+
+  case 4:
+    printf("will query orderkey > and partkey < \n");
+    str_stmt = "select * from " + table +
+      " where L_ORDERKEY > ? and L_PARTKEY < ?";
+    return client.prepare(str_stmt);
+  case 5:
+    printf("will query orderkey < \n");
+    str_stmt = "select * from " + table +
+      " where L_ORDERKEY > ?";
+    return client.prepare(str_stmt);
+  case 6:
+    printf("will query orderkey < and partkey > \n");
+    str_stmt = "select * from " + table +
+      " where L_ORDERKEY < ? and L_PARTKEY > ?";
+    return client.prepare(str_stmt);
+  default:
+    break;
+  }
+  return 0;
+}
+
 void execute_qps(int tid) {
   Mysql client;
   if (!client.connect()) {
     printf("Query(): conn failed\n");
     return;
   }
-
-  int cycle = 0;
+  int cycle = 5;
   while (true) {
-    int idx = rand() % table_limit + 1;
-    string table = TablePrefix + to_string(idx);
-
-    string str_stmt;
     MYSQL_STMT* stmt;
     time_t start;
     if (cycle == 0) {
-      str_stmt = "select * from " + table +
-	" where L_ORDERKEY = ? and L_PARTKEY = ?";
-      stmt = client.prepare(str_stmt);
+      stmt = gen_stmt(client, 0);
       start = time(0);
       QueryExecute(client, stmt, kOrderKey, kPartKey);
     } else if (cycle == 1) {
-      str_stmt = "select * from " + table +
-	" where L_SUPPKEY = ? and L_PARTKEY = ?";
-      stmt = client.prepare(str_stmt);
+      stmt = gen_stmt(client, 1);
       start = time(0);
       QueryExecute(client, stmt, kSuppKey, kPartKey);
-    } else {
-      str_stmt = "select * from " + table +
-	" where L_ORDERKEY = ?";
-      stmt = client.prepare(str_stmt);
+    } else if (cycle == 2) {
+      stmt = gen_stmt(client, 2);
       start = time(0);
       QueryExecute(client, stmt, kOrderKey, -1);
     }
-    cycle = (cycle + 1) % 3;
+
+    if (cycle == 4) { // '>' '<' part test
+      stmt = gen_stmt(client, 4);
+      start = time(0);
+      QueryExecute(client, stmt, kOrderKey, kPartKey);
+    } else if (cycle == 5) {
+      stmt = gen_stmt(client, 2);
+      start = time(0);
+      QueryExecute(client, stmt, kOrderKey, -1);
+      //printf("done query orderkey < \n");
+    } else if (cycle == 6) {
+      stmt = gen_stmt(client, 2);
+      start = time(0);
+      QueryExecute(client, stmt, kOrderKey, kPartKey);
+    }
+
+    //cycle++;
+    //if (cycle == 7)
+    //cycle = 4;
 
     total_counts += insert_cnt;
     total_elapse += time(0) - start;
     total_rounds++;
-    if (total_rounds.load() % 20 == 0) {
+    if (total_rounds.load() % 10 == 0) {
       printf("== QPS %f, total query %lld, time elapse %lld\n", 
 	     (double)total_counts.load() / total_elapse.load(), total_counts.load(), total_elapse.load());
     }
@@ -161,7 +208,8 @@ void StartStress() {
   std::vector<std::thread> threads;
   // Launoch a group of threads
   for (size_t i = 0; i < thread_cnt; ++i) {
-    threads.push_back(std::thread(execute, i));
+    //threads.push_back(std::thread(execute, i));
+    threads.push_back(std::thread(execute_qps, i));
     printf("thread %d start. \n", i);
   }
   // Join the threads with the main thread
@@ -381,16 +429,18 @@ void Delete() {
   if (!try_lock(table))
     return;
   CreateTable(idx);
-  /*{
-    string stmt = "delete from " + table +
+  {
+    string str_stmt = "delete from " + table +
       " where L_ORDERKEY = ? and L_PARTKEY = ?";
+    MYSQL_STMT* stmt = client.prepare(str_stmt);
     QueryExecute(client, stmt, kOrderKey, kPartKey);
   }
   {
-    string stmt = "delete from " + table +
+    string str_stmt = "delete from " + table +
       " where id = ?";
+    MYSQL_STMT* stmt = client.prepare(str_stmt);
     QueryExecute(client, stmt, -1, -1);
-    }*/
+  }
   release_lock(table);
   printf("done Delete: %s%d\n", TablePrefix.c_str(), idx);
 }
@@ -421,13 +471,12 @@ void Query() {
     MYSQL_STMT* stmt = client.prepare(str_stmt);
     QueryExecute(client, stmt, kSuppKey, kPartKey);
   }
-/*
   {
-    string stmt = "select * from " + table +
+    string str_stmt = "select * from " + table +
       " where id = ?";
+    MYSQL_STMT* stmt = client.prepare(str_stmt);
     QueryExecute(client, stmt, -1, -1);
   }
-*/
   {
     string str_stmt = "select * from " + table +
       " where L_ORDERKEY = ?";
