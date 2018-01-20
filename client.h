@@ -42,8 +42,8 @@ private:
   const char *host = "127.0.0.1";
   const char *user = "root";
   const char *passwd = "";
-  const char *db = "t_test";
-  const unsigned int port = 3306;
+  const char *db = "tpch";
+  const unsigned int port = 3307;
 
   MYSQL *g_conn;
   const char *get_one_query = "select p.page_id as \"page_id\", "
