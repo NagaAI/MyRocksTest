@@ -66,10 +66,8 @@ enum field_t {
   kComment
 };
 
-string TablePrefix = "lineitem";
+string TablePrefix = "terark_";
 
-void Query(Mysql& client, MYSQL_STMT* stmt, const string& table);
-void QueryExecute(Mysql& client, MYSQL_STMT* stmt, const std::string& table, int idx1, int idx2);
 void QueryExecute(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2);
 void AlterExecute(Mysql& client, const std::string& stmt);
 
@@ -84,21 +82,35 @@ void Init() {
       continue;
     contents.push_back(line);
   }
-  // create database
-  /*Mysql client;
-  if (!client.connect()) {
-    printf("CreateTable(): conn failed\n");
-    exit(-1);
-  }
-  if (mysql_query(client, "CREATE DATABASE if not exist t_test")) {
-    fprintf(stderr, "%s\n", mysql_error(con));
-    mysql_close(con);
-    exit(1);
-  }
-  */
 }
 
 void execute(int tid) {
+  while (true) {
+    int type = rand() % 7;
+    switch (type) {
+    case kCreateTable:
+      CreateTable(-1);
+      break;
+    case kDropTable:
+      DropTable();
+      break;
+    case kAlterTable:
+      AlterTable();
+      break;
+    case kInsert:
+      Insert();
+      break;
+    case kDelete:
+      Delete();
+      break;
+    case kQuery:
+      Query();
+      break;
+    }
+  }
+}
+
+void execute_qps(int tid) {
   Mysql client;
   if (!client.connect()) {
     printf("Query(): conn failed\n");
@@ -141,33 +153,9 @@ void execute(int tid) {
       printf("== QPS %f, total query %lld, time elapse %lld\n", 
 	     (double)total_counts.load() / total_elapse.load(), total_counts.load(), total_elapse.load());
     }
-
-
-/*
-    int type = rand() % 7;
-    switch (type) {
-    case kCreateTable:
-      CreateTable(-1);
-      break;
-    case kDropTable:
-      DropTable();
-      break;
-    case kAlterTable:
-      AlterTable();
-      break;
-    case kInsert:
-      Insert();
-      break;
-    case kDelete:
-      Delete();
-      break;
-    case kQuery:
-      Query();
-      break;
-    }
-*/
   }
 }
+
 
 void StartStress() {
   std::vector<std::thread> threads;
@@ -215,7 +203,7 @@ void CreateTable(int idx) {
   if (!try_lock(table))
     return;
 
-  printf("CreateTable: terark_%d\n", idx);
+  printf("CreateTable: %s%d\n", TablePrefix.c_str(), idx);
   stringstream ss;
   ss << "(id BIGINT NOT NULL AUTO_INCREMENT, "
      << "L_ORDERKEY    INT NOT NULL, "
@@ -253,7 +241,7 @@ void CreateTable(int idx) {
   MYSQL_STMT* m_stmt = client.prepare(stmt);
   client.execute(m_stmt);
   release_lock(table);
-  printf("done CreateTable: terark_%d\n", idx);
+  printf("done CreateTable: %s%d\n", TablePrefix.c_str(), idx);
 }
 
 void DropTable() {
@@ -285,34 +273,34 @@ void AlterTable() {
     printf("AlterTable(): conn failed\n");
     return;
   }
-  printf("Alter table: terark_%d\n", idx);
+  printf("Alter table: %s%d\n", TablePrefix.c_str(), idx);
   {
     string stmt = "create index ORDER_LINE on " + table + " (L_ORDERKEY, L_LINENUMBER);";
     AlterExecute(client, stmt);
-    printf("Alter table: terark_%d, create index ORDER_LINE done\n", idx);
+    printf("Alter table: %s%d, create index ORDER_LINE done\n", TablePrefix.c_str(), idx);
   }
   {
     string stmt = "drop index PART on " + table + ";";
     AlterExecute(client, stmt);
-    printf("Alter table: terark_%d, drop PART done\n", idx);
+    printf("Alter table: %s%d, drop PART done\n", TablePrefix.c_str(), idx);
   }
   {
     string stmt = "drop index PART_ORDER on " + table + ";";
     AlterExecute(client, stmt);
-    printf("Alter table: terark_%d, drop PART_ORDER done\n", idx);
+    printf("Alter table: %s%d, drop PART_ORDER done\n", TablePrefix.c_str(), idx);
   }
   {
     string stmt = "create index PART on " + table + " (L_PARTKEY);";
     AlterExecute(client, stmt);
-    printf("Alter table: terark_%d, create index PART done\n", idx);
+    printf("Alter table: %s%d, create index PART done\n", TablePrefix.c_str(), idx);
   }
   {
     string stmt = "create index PART_ORDER on " + table + "(L_PARTKEY, L_ORDERKEY);";
     AlterExecute(client, stmt);
-    printf("Alter table: terark_%d, create composite index PART_ORDER done\n", idx);
+    printf("Alter table: %s%d, create composite index PART_ORDER done\n", TablePrefix.c_str(), idx);
   }
   release_lock(table);
-  printf("done Alter table: terark_%d\n", idx);
+  printf("done Alter table: %s%d\n", TablePrefix.c_str(), idx);
 }
 
 void AlterExecute(Mysql& client, const std::string& stmt) {
@@ -343,7 +331,7 @@ void Insert() {
   MYSQL_STMT* stmt = client.prepare(str_stmt);
   int row_start = rand() % contents.size();
   int limit = min<size_t>(insert_cnt, contents.size() - row_start + 1);
-  printf("Insert table: terark_%d, cnt %d\n", idx, limit);
+  printf("Insert table: %s%d, cnt %d\n", TablePrefix.c_str(), idx, limit);
   for (int cnt = 0; cnt < insert_cnt; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
@@ -379,7 +367,7 @@ void Insert() {
   }
   client.release_stmt(stmt);
   release_lock(table);
-  printf("done Insert table: terark_%d\n", idx);
+  printf("done Insert table: %s%d\n", TablePrefix.c_str(), idx);
 }
 
 void Delete() {
@@ -404,7 +392,7 @@ void Delete() {
     QueryExecute(client, stmt, -1, -1);
     }*/
   release_lock(table);
-  printf("done Delete: terark_%d\n", idx);
+  printf("done Delete: %s%d\n", TablePrefix.c_str(), idx);
 }
 
 // query with primary key? or secondary key
@@ -419,18 +407,18 @@ void Query() {
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
-  //CreateTable(idx);
+  CreateTable(idx);
 
   {
     string str_stmt = "select * from " + table +
       " where L_ORDERKEY = ? and L_PARTKEY = ?";
-    static MYSQL_STMT* stmt = client.prepare(str_stmt);
+    MYSQL_STMT* stmt = client.prepare(str_stmt);
     QueryExecute(client, stmt, kOrderKey, kPartKey);
   }
   {
     string str_stmt = "select * from " + table +
       " where L_SUPPKEY = ? and L_PARTKEY = ?";
-    static MYSQL_STMT* stmt = client.prepare(str_stmt);
+    MYSQL_STMT* stmt = client.prepare(str_stmt);
     QueryExecute(client, stmt, kSuppKey, kPartKey);
   }
 /*
@@ -443,59 +431,13 @@ void Query() {
   {
     string str_stmt = "select * from " + table +
       " where L_ORDERKEY = ?";
-    static MYSQL_STMT* stmt = client.prepare(str_stmt);
+    MYSQL_STMT* stmt = client.prepare(str_stmt);
     QueryExecute(client, stmt, kOrderKey, -1);
   }
   release_lock(table);
 
-  total_counts += insert_cnt * 3;
-  //printf("done Query table: %s%d\n", TablePrefix.c_str(), idx);
+  printf("done Query table: %s%d\n", TablePrefix.c_str(), idx);
 }
-
-/*void Query(Mysql& client, MYSQL_STMT* stmt, const string& table) {
-  {
-    QueryExecute(client, stmt, table, kOrderKey, kPartKey);
-  }
-  {
-    QueryExecute(client, stmt, table, kSuppKey, kPartKey);
-  }
-  {
-    QueryExecute(client, stmt, table, kOrderKey, -1);
-  }
-  //release_lock(table);
-
-  total_counts += insert_cnt * 3;
-  }*/
-
-/*void QueryExecute(Mysql& client, MYSQL_STMT* stmt, const std::string& table, int idx1, int idx2) {
-  int row_start = rand() % contents.size();
-  int limit = min<size_t>(insert_cnt, contents.size() - row_start + 1);
-  //printf("table: stmt %s, cnt %d\n", str.c_str(), limit);
-  for (int cnt = 0; cnt < insert_cnt; cnt++) {
-    if (row_start + cnt >= contents.size())
-      break;
-    string& line = contents[cnt + row_start];
-    std::vector<std::string> results;
-    boost::split(results, line, [](char c){return c == '|';});
-    if (idx1 != -1 && idx2 != -1) {
-      MYSQL_BIND in_params[2];
-      client.bind_arg(in_params[0], stoi(results[idx1]));
-      client.bind_arg(in_params[1], stoi(results[idx2]));
-      client.bind_execute(stmt, in_params);
-    } else if (idx1 != -1) {
-      MYSQL_BIND in_params[1];
-      client.bind_arg(in_params[0], stoi(results[idx1]));
-      client.bind_execute(stmt, in_params);
-    } else {
-      MYSQL_BIND in_params[1];
-      client.bind_arg(in_params[0], cnt + row_start);
-      client.bind_execute(stmt, in_params);
-    }
-  }
-  client.release_stmt(stmt);
-  }*/
-
-
 
 void QueryExecute(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2) {
   int row_start = rand() % contents.size();
