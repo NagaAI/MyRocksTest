@@ -1,7 +1,10 @@
 
 #include <time.h>
+#include <ctime>
+#include <ratio>
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <fstream>
 #include <map>
@@ -12,15 +15,22 @@
 #include <thread>
 #include <vector>
 
-#include <boost/algorithm/string.hpp>
+//`#include <boost/algorithm/string.hpp>
+//#include <boost/utility/string_ref.hpp>
+
+#include <terark/fstring.cpp>
+#include <terark/lcast.cpp>
 #include "client.h"
 #include "run_test.h"
 
 using namespace std;
+using namespace std::chrono;
+using namespace terark;
 
 //typedef function<void()> executor;
 //vector<executor> executors;
 vector<string> contents;
+map<int, vector<string>> dict;
 
 struct TableInfo {
   string name;
@@ -33,9 +43,12 @@ recursive_mutex g_lock;
 atomic<long> total_counts = { 0 };
 atomic<long> total_rounds = { 0 };
 atomic<long> total_elapse = { 0 };
-size_t thread_cnt = 4;
+//atomic<high_resolution_clock::time_point> total_elapse = ;
+//time_t start_tm = time(0);
+
+size_t thread_cnt = terark::getEnvLong("threadCount", 4);
 size_t table_limit = 100;
-size_t insert_cnt = 100;
+size_t insert_cnt = terark::getEnvLong("insertCount", 10);
 
 enum op_type_t {
   kCreateTable = 0,
@@ -159,18 +172,18 @@ void execute_qps(int tid) {
   int cycle = 0;
   while (true) {
     MYSQL_STMT* stmt;
-    time_t start;
+    high_resolution_clock::time_point start;
     if (cycle == 0) {
       stmt = gen_stmt(client, 0);
-      start = time(0);
+      start = high_resolution_clock::now();
       QueryExecute(client, stmt, kOrderKey, kPartKey);
     } else if (cycle == 1) {
       stmt = gen_stmt(client, 1);
-      start = time(0);
+      start = high_resolution_clock::now();
       QueryExecute(client, stmt, kSuppKey, kPartKey);
     } else if (cycle == 2) {
       stmt = gen_stmt(client, 2);
-      start = time(0);
+      start = high_resolution_clock::now();
       QueryExecute(client, stmt, kOrderKey, -1);
     }
 
@@ -195,11 +208,15 @@ void execute_qps(int tid) {
     //cycle = 4;
 
     total_counts += insert_cnt;
-    total_elapse += time(0) - start;
+
+    high_resolution_clock::time_point end = high_resolution_clock::now();
+    duration<int,std::micro> time_span = duration_cast<duration<int,std::micro>>(end - start);
+    total_elapse += time_span.count();
     total_rounds++;
-    if (total_rounds.load() % 10 == 0) {
-      printf("== QPS %f, total query %lld, time elapse %lld\n", 
-	     (double)total_counts.load() / total_elapse.load(), total_counts.load(), total_elapse.load());
+    if (total_rounds.load() % 100 == 0) {
+      //printf("total rounds %lld\n", total_rounds.load());
+      printf("== QPS %f, total query %lld, time elapse %f sec\n", 
+	     (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), total_counts.load(), total_elapse.load() / 1e6);
     }
   }
 }
@@ -386,9 +403,7 @@ void Insert() {
       break;
     MYSQL_BIND in_params[17];
     memset(in_params, 0, sizeof(in_params));
-    string& line = contents[cnt + row_start];
-    std::vector<std::string> results;
-    boost::split(results, line, [](char c){return c == '|';});
+    vector<string>& results = dict[cnt + row_start];
 
     client.bind_arg(in_params[0], stoi(results[kOrderKey]));
     client.bind_arg(in_params[1], stoi(results[kPartKey]));
@@ -493,20 +508,21 @@ void QueryExecute(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2) {
   int row_start = rand() % contents.size();
   int limit = min<size_t>(insert_cnt, contents.size() - row_start + 1);
   //printf("table: stmt %s, cnt %d\n", str.c_str(), limit);
+  std::vector<fstring> results;
   for (int cnt = 0; cnt < insert_cnt; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
-    string& line = contents[cnt + row_start];
-    std::vector<std::string> results;
-    boost::split(results, line, [](char c){return c == '|';});
+    const string& line = contents[cnt + row_start];
+    results.resize(0);
+    fstring(line).split('|', &results);
     if (idx1 != -1 && idx2 != -1) {
       MYSQL_BIND in_params[2];
-      client.bind_arg(in_params[0], stoi(results[idx1]));
-      client.bind_arg(in_params[1], stoi(results[idx2]));
+      client.bind_arg(in_params[0], atoi(results[idx1].data()));
+      client.bind_arg(in_params[1], atoi(results[idx2].data()));
       client.bind_execute(stmt, in_params);
     } else if (idx1 != -1) {
       MYSQL_BIND in_params[1];
-      client.bind_arg(in_params[0], stoi(results[idx1]));
+      client.bind_arg(in_params[0], atoi(results[idx1].data()));
       client.bind_execute(stmt, in_params);
     } else {
       MYSQL_BIND in_params[1];

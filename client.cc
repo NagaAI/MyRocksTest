@@ -3,11 +3,14 @@
 //
 
 #include <assert.h>
+//#include <terark/fstring.cpp>
 #include "client.h"
 
 
 bool Mysql::connect()
 {
+  //port = terark::getEnvLong("port", 3307); // default terark
+  printf("port used is %d\n", port);
   //mysql_init(g_conn);
   g_conn = mysql_init(NULL);
   //my_bool myTrue = true;
@@ -55,7 +58,7 @@ void Mysql::bind_arg(MYSQL_BIND &b, const int &val) {
 
 void Mysql::bind_arg(MYSQL_BIND &b, const double &val) {
   memset(&b, 0, sizeof(b));
-  b.buffer_length = 4;
+  b.buffer_length = 8;
   b.buffer_type = MYSQL_TYPE_DOUBLE;
   b.buffer = (void *)&val;
 }

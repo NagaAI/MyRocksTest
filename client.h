@@ -16,7 +16,7 @@ class Mysql
 {
 public:
   Mysql() {
-      //connect();
+    //connect();
   }
   Mysql(const char *_host, const char *_user, const char *_passwd, const char *_db, const unsigned int &_port)
       : host(_host), user(_user), passwd(_passwd), db(_db), port(_port) {
@@ -43,8 +43,8 @@ private:
   const char *user = "root";
   const char *passwd = "";
   const char *db = "tpch";
-  const unsigned int port = 3336;   // 120G data, innodb, QPS
-  //const unsigned int port = 3307; // 120G data, Terark, QPS
+  //const unsigned int port = 3336;   // 120G data, innodb, QPS
+  const unsigned int port = 3307; // 120G data, Terark, QPS
   //const unsigned int port = 3316;  // no data, Terark, CRUD test
 
   MYSQL *g_conn;
