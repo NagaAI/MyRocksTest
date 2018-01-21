@@ -156,7 +156,7 @@ void execute_qps(int tid) {
     printf("Query(): conn failed\n");
     return;
   }
-  int cycle = 5;
+  int cycle = 0;
   while (true) {
     MYSQL_STMT* stmt;
     time_t start;
@@ -174,7 +174,7 @@ void execute_qps(int tid) {
       QueryExecute(client, stmt, kOrderKey, -1);
     }
 
-    if (cycle == 4) { // '>' '<' part test
+    /*if (cycle == 4) { // '>' '<' part test
       stmt = gen_stmt(client, 4);
       start = time(0);
       QueryExecute(client, stmt, kOrderKey, kPartKey);
@@ -187,8 +187,9 @@ void execute_qps(int tid) {
       stmt = gen_stmt(client, 2);
       start = time(0);
       QueryExecute(client, stmt, kOrderKey, kPartKey);
-    }
+      }*/
 
+    cycle = (cycle + 1) % 3;
     //cycle++;
     //if (cycle == 7)
     //cycle = 4;

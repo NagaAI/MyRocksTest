@@ -43,8 +43,9 @@ private:
   const char *user = "root";
   const char *passwd = "";
   const char *db = "tpch";
-  //const unsigned int port = 3316;
-  const unsigned int port = 3307;
+  const unsigned int port = 3336;   // 120G data, innodb, QPS
+  //const unsigned int port = 3307; // 120G data, Terark, QPS
+  //const unsigned int port = 3316;  // no data, Terark, CRUD test
 
   MYSQL *g_conn;
   const char *get_one_query = "select p.page_id as \"page_id\", "
