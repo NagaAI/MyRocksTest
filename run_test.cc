@@ -47,7 +47,7 @@ atomic<long> total_elapse = { 0 };
 
 size_t thread_cnt = terark::getEnvLong("threadCount", 32);
 size_t table_limit = 100;
-size_t row_cnt = terark::getEnvLong("insertCount", 10);
+size_t row_cnt = terark::getEnvLong("insertCount", 1);
 
 enum op_type_t {
   kCreateTable = 0,
@@ -199,17 +199,14 @@ void execute_qps(int tid) {
   prepare_stmts(client, stmts);
   int cycle = 0;
   while (true) {
-    high_resolution_clock::time_point start;
+    high_resolution_clock::time_point start = high_resolution_clock::now();
     int idx = rand() % table_limit;
     MYSQL_STMT* stmt = stmts[(query_t)cycle][idx];
     if (cycle == 0) {
-      start = high_resolution_clock::now();
       QueryExecute(client, stmt, kOrderKey, kPartKey);
     } else if (cycle == 1) {
-      start = high_resolution_clock::now();
       QueryExecute(client, stmt, kSuppKey, kPartKey);
     } else if (cycle == 2) {
-      start = high_resolution_clock::now();
       QueryExecute(client, stmt, kOrderKey, -1);
     }
 
@@ -229,21 +226,18 @@ void execute_qps(int tid) {
       }*/
 
     cycle = (cycle + 1) % 3;
-    //cycle++;
-    //if (cycle == 7)
-    //cycle = 4;
-
     total_counts += row_cnt;
-
+    total_rounds++;
     high_resolution_clock::time_point end = high_resolution_clock::now();
     duration<int,std::micro> time_span = duration_cast<duration<int,std::micro>>(end - start);
     total_elapse += time_span.count();
-    total_rounds++;
-    if (total_rounds.load() % 1000 == 0) {
-      //printf("total rounds %lld\n", total_rounds.load());
-      printf("== QPS %f, total query %lld, time elapse %f sec\n", 
+    if (total_rounds.load() % 30001 == 0) {
+      printf("== QPS %f, query %lld, time elapse %f sec\n", 
 	     (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
 	     total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
+      total_rounds = 1;
+      total_counts = 0;
+      total_elapse = 0;
     }
   }
 }

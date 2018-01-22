@@ -50,6 +50,7 @@ bool parse_args(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
+  printf("start time %lld\n", time(0));
   printf("start connecting...\n");
   Mysql client;
   if (!client.connect()) {
