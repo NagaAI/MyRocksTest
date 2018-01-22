@@ -26,7 +26,7 @@ public:
           //Mysql(_host, _user, _passwd, _db, 3306) { }
 
   ~Mysql() {
-    mysql_close(g_conn);
+    mysql_close(conn_);
   }
 
   //virtual bool get_one(ThreadState *state);
@@ -37,6 +37,24 @@ public:
   virtual bool get_all_keys(std::vector<int> *vec);
 
   bool connect();
+
+public:
+  MYSQL_STMT *prepare(std::string query);
+  bool release_stmt(MYSQL_STMT* stmt);
+  void bind_arg(MYSQL_BIND &b, const int &val);
+  void bind_arg(MYSQL_BIND &b, const double &val);
+  void bind_arg(MYSQL_BIND &b, const char *val, size_t length);
+  void execute(MYSQL_STMT *stmt);
+  void bind_execute(MYSQL_STMT *stmt, MYSQL_BIND *params);
+  /*
+   * Commands out of sync; you can't run this command now.
+   * will happen if you try to execute two queries that return data without 
+   * calling mysql_use_result() or mysql_store_result() in between.
+   */
+  MYSQL_RES* use_result();
+  void       free_result(MYSQL_RES*);
+  void       consume_data(MYSQL_STMT*);
+  std::string str = R"foo(123)foo";
   
 private:
   const char *host = "127.0.0.1";
@@ -47,29 +65,13 @@ private:
   const unsigned int port = 3307; // 120G data, Terark, QPS
   //const unsigned int port = 3316;  // no data, Terark, CRUD test
 
-  MYSQL *g_conn;
-  const char *get_one_query = "select p.page_id as \"page_id\", "
-          "p.page_title as \"page_title\", "
-          "r.rev_text_id as \"revision_id\", "
-          "t.old_id as \"text_id\", "
-          "t.old_text as \"text\" from "
-          "page p inner join revision r on p.page_latest = r.rev_id "
-          "inner join text t on r.rev_text_id = t.old_id where p.page_id = ?";
+  MYSQL *conn_;
   MYSQL_STMT *get_one_stmt;
 
   MYSQL_BIND get_one_out_params[5];
   MYSQL_BIND get_one_in_params[1];
 
 
-public:
-  MYSQL_STMT *prepare(std::string query);
-  bool release_stmt(MYSQL_STMT* stmt);
-  void bind_arg(MYSQL_BIND &b, const int &val);
-  void bind_arg(MYSQL_BIND &b, const double &val);
-  void bind_arg(MYSQL_BIND &b, const char *val, size_t length);
-  void execute(MYSQL_STMT *stmt);
-  void bind_execute(MYSQL_STMT *stmt, MYSQL_BIND *params);
-  std::string str = R"foo(123)foo";
 };
 
 #endif //MEDIAWIKI_DATABASE_BENCHMARK_MYSQL_H

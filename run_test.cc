@@ -30,7 +30,6 @@ using namespace terark;
 //typedef function<void()> executor;
 //vector<executor> executors;
 vector<string> contents;
-map<int, vector<string>> dict;
 
 struct TableInfo {
   string name;
@@ -46,9 +45,9 @@ atomic<long> total_elapse = { 0 };
 //atomic<high_resolution_clock::time_point> total_elapse = ;
 //time_t start_tm = time(0);
 
-size_t thread_cnt = terark::getEnvLong("threadCount", 4);
+size_t thread_cnt = terark::getEnvLong("threadCount", 32);
 size_t table_limit = 100;
-size_t insert_cnt = terark::getEnvLong("insertCount", 10);
+size_t row_cnt = terark::getEnvLong("insertCount", 10);
 
 enum op_type_t {
   kCreateTable = 0,
@@ -59,6 +58,14 @@ enum op_type_t {
   kUpdate,
   kQuery
 };
+
+enum query_t {
+  kOrder_Part = 0,
+  kSupp_Part,
+  kOrder
+};
+typedef map<int, vector<MYSQL_STMT*>> I2PreparedStmts;
+
 
 enum field_t {
   kOrderKey = 0,
@@ -124,24 +131,42 @@ void execute(int tid) {
   }
 }
 
-MYSQL_STMT* gen_stmt(Mysql& client, int sel) {
+void prepare_stmts(Mysql& client, I2PreparedStmts& pStmts) {
+  for (int idx = 1; idx <= table_limit; idx++) {
+    string table = TablePrefix + to_string(idx);
+    {
+      string str_stmt = "select * from " + table +
+	" where L_ORDERKEY = ? and L_PARTKEY = ?";
+      MYSQL_STMT* stmt = client.prepare(str_stmt);
+      pStmts[kOrder_Part].push_back(stmt);
+    }
+    {
+      string str_stmt = "select * from " + table +
+	" where L_SUPPKEY = ? and L_PARTKEY = ?";
+      MYSQL_STMT* stmt = client.prepare(str_stmt);
+      pStmts[kSupp_Part].push_back(stmt);
+    }
+    {
+      string str_stmt = "select * from " + table +
+	" where L_ORDERKEY = ?";
+      MYSQL_STMT* stmt = client.prepare(str_stmt);
+      pStmts[kOrder].push_back(stmt);
+    }
+  }
+}
+
+MYSQL_STMT* gen_stmt(Mysql& client, query_t sel) {
   int idx = rand() % table_limit + 1;
   string table = TablePrefix + to_string(idx);
   string str_stmt;
   switch (sel) {
-  case 0:
-    str_stmt = "select * from " + table +
-	" where L_ORDERKEY = ? and L_PARTKEY = ?";
-    return client.prepare(str_stmt);
-  case 1:
-    str_stmt = "select * from " + table +
-	" where L_SUPPKEY = ? and L_PARTKEY = ?";
-    return client.prepare(str_stmt);
-  case 2:
-    str_stmt = "select * from " + table +
-	" where L_ORDERKEY = ?";
-    return client.prepare(str_stmt);
-
+  case kOrder_Part:
+    return 0;
+  case kSupp_Part:
+    return 0;
+  case kOrder:
+    return 0;
+    /*
   case 4:
     printf("will query orderkey > and partkey < \n");
     str_stmt = "select * from " + table +
@@ -157,6 +182,7 @@ MYSQL_STMT* gen_stmt(Mysql& client, int sel) {
     str_stmt = "select * from " + table +
       " where L_ORDERKEY < ? and L_PARTKEY > ?";
     return client.prepare(str_stmt);
+    */
   default:
     break;
   }
@@ -169,20 +195,20 @@ void execute_qps(int tid) {
     printf("Query(): conn failed\n");
     return;
   }
+  I2PreparedStmts stmts;
+  prepare_stmts(client, stmts);
   int cycle = 0;
   while (true) {
-    MYSQL_STMT* stmt;
     high_resolution_clock::time_point start;
+    int idx = rand() % table_limit;
+    MYSQL_STMT* stmt = stmts[(query_t)cycle][idx];
     if (cycle == 0) {
-      stmt = gen_stmt(client, 0);
       start = high_resolution_clock::now();
       QueryExecute(client, stmt, kOrderKey, kPartKey);
     } else if (cycle == 1) {
-      stmt = gen_stmt(client, 1);
       start = high_resolution_clock::now();
       QueryExecute(client, stmt, kSuppKey, kPartKey);
     } else if (cycle == 2) {
-      stmt = gen_stmt(client, 2);
       start = high_resolution_clock::now();
       QueryExecute(client, stmt, kOrderKey, -1);
     }
@@ -207,16 +233,17 @@ void execute_qps(int tid) {
     //if (cycle == 7)
     //cycle = 4;
 
-    total_counts += insert_cnt;
+    total_counts += row_cnt;
 
     high_resolution_clock::time_point end = high_resolution_clock::now();
     duration<int,std::micro> time_span = duration_cast<duration<int,std::micro>>(end - start);
     total_elapse += time_span.count();
     total_rounds++;
-    if (total_rounds.load() % 100 == 0) {
+    if (total_rounds.load() % 1000 == 0) {
       //printf("total rounds %lld\n", total_rounds.load());
       printf("== QPS %f, total query %lld, time elapse %f sec\n", 
-	     (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), total_counts.load(), total_elapse.load() / 1e6);
+	     (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
+	     total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
     }
   }
 }
@@ -396,28 +423,33 @@ void Insert() {
     " values(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
   MYSQL_STMT* stmt = client.prepare(str_stmt);
   int row_start = rand() % contents.size();
-  int limit = min<size_t>(insert_cnt, contents.size() - row_start + 1);
+  int limit = min<size_t>(row_cnt, contents.size() - row_start + 1);
+  std::vector<fstring> results;
   printf("Insert table: %s%d, cnt %d\n", TablePrefix.c_str(), idx, limit);
-  for (int cnt = 0; cnt < insert_cnt; cnt++) {
+  for (int cnt = 0; cnt < row_cnt; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
+
+    const string& line = contents[cnt + row_start];
+    results.resize(0);
+    fstring(line).split('|', &results);
+
     MYSQL_BIND in_params[17];
     memset(in_params, 0, sizeof(in_params));
-    vector<string>& results = dict[cnt + row_start];
 
-    client.bind_arg(in_params[0], stoi(results[kOrderKey]));
-    client.bind_arg(in_params[1], stoi(results[kPartKey]));
+    client.bind_arg(in_params[0], atoi(results[kOrderKey].data()));
+    client.bind_arg(in_params[1], atoi(results[kPartKey].data()));
 
-    client.bind_arg(in_params[2], stoi(results[kSuppKey]));
-    client.bind_arg(in_params[3], stoi(results[kLineNumber]));
+    client.bind_arg(in_params[2], atoi(results[kSuppKey].data()));
+    client.bind_arg(in_params[3], atoi(results[kLineNumber].data()));
 
-    client.bind_arg(in_params[4], stod(results[kQuantity]));
-    client.bind_arg(in_params[5], stod(results[kExtendedPrice]));
-    client.bind_arg(in_params[6], stod(results[kDiscount]));
-    client.bind_arg(in_params[7], stod(results[kTax]));
+    client.bind_arg(in_params[4], atof(results[kQuantity].data()));
+    client.bind_arg(in_params[5], atof(results[kExtendedPrice].data()));
+    client.bind_arg(in_params[6], atof(results[kDiscount].data()));
+    client.bind_arg(in_params[7], atof(results[kTax].data()));
 
-    client.bind_arg(in_params[8], results[kReturnFlag].c_str(), 1);
-    client.bind_arg(in_params[9], results[kLineStatus].c_str(), 1);
+    client.bind_arg(in_params[8], results[kReturnFlag].data(), 1);
+    client.bind_arg(in_params[9], results[kLineStatus].data(), 1);
 
     // shipdate = 10
     // commitdate = 11
@@ -506,10 +538,10 @@ void Query() {
 
 void QueryExecute(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2) {
   int row_start = rand() % contents.size();
-  int limit = min<size_t>(insert_cnt, contents.size() - row_start + 1);
+  int limit = min<size_t>(row_cnt, contents.size() - row_start + 1);
   //printf("table: stmt %s, cnt %d\n", str.c_str(), limit);
   std::vector<fstring> results;
-  for (int cnt = 0; cnt < insert_cnt; cnt++) {
+  for (int cnt = 0; cnt < row_cnt; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
     const string& line = contents[cnt + row_start];
@@ -529,6 +561,8 @@ void QueryExecute(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2) {
       client.bind_arg(in_params[0], cnt + row_start);
       client.bind_execute(stmt, in_params);
     }
+    //MYSQL_RES *res = client.use_result();
+    client.consume_data(stmt);
   }
-  client.release_stmt(stmt);
+  //client.release_stmt(stmt);
 }
