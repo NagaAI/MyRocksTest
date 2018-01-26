@@ -62,7 +62,7 @@ private:
   const char *passwd = "";
   const char *db = "tpch";
   //const unsigned int port = 3336;   // 120G data, innodb, QPS
-  const unsigned int port = 3307; // 120G data, Terark, QPS
+  unsigned int port = 3307; // 120G data, Terark, QPS
   //const unsigned int port = 3316;  // no data, Terark, CRUD test
 
   MYSQL *conn_;

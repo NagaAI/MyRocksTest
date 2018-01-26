@@ -15,7 +15,7 @@
 #include <thread>
 #include <vector>
 
-//`#include <boost/algorithm/string.hpp>
+//#include <boost/algorithm/string.hpp>
 //#include <boost/utility/string_ref.hpp>
 
 #include <terark/fstring.cpp>
@@ -46,7 +46,7 @@ atomic<long> total_elapse = { 0 };
 //time_t start_tm = time(0);
 
 size_t thread_cnt = terark::getEnvLong("threadCount", 32);
-size_t table_limit = 100;
+size_t table_cnt = terark::getEnvLong("tableCount", 100);
 size_t row_cnt = terark::getEnvLong("insertCount", 1);
 
 enum op_type_t {
@@ -132,7 +132,7 @@ void execute(int tid) {
 }
 
 void prepare_stmts(Mysql& client, I2PreparedStmts& pStmts) {
-  for (int idx = 1; idx <= table_limit; idx++) {
+  for (int idx = 1; idx <= table_cnt; idx++) {
     string table = TablePrefix + to_string(idx);
     {
       string str_stmt = "select * from " + table +
@@ -156,7 +156,7 @@ void prepare_stmts(Mysql& client, I2PreparedStmts& pStmts) {
 }
 
 MYSQL_STMT* gen_stmt(Mysql& client, query_t sel) {
-  int idx = rand() % table_limit + 1;
+  int idx = rand() % table_cnt + 1;
   string table = TablePrefix + to_string(idx);
   string str_stmt;
   switch (sel) {
@@ -200,7 +200,7 @@ void execute_qps(int tid) {
   int cycle = 0;
   while (true) {
     high_resolution_clock::time_point start = high_resolution_clock::now();
-    int idx = rand() % table_limit;
+    int idx = rand() % table_cnt;
     MYSQL_STMT* stmt = stmts[(query_t)cycle][idx];
     if (cycle == 0) {
       QueryExecute(client, stmt, kOrderKey, kPartKey);
@@ -251,6 +251,7 @@ void StartStress() {
     threads.push_back(std::thread(execute_qps, i));
     printf("thread %d start. \n", i);
   }
+
   // Join the threads with the main thread
   for (size_t i = 0; i < thread_cnt; ++i) {
     threads[i].join();
@@ -285,7 +286,7 @@ void release_lock(const std::string& table) {
 
 void CreateTable(int idx) {
   if (idx == -1)
-    idx = rand() % table_limit;
+    idx = rand() % table_cnt;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
@@ -332,7 +333,7 @@ void CreateTable(int idx) {
 }
 
 void DropTable() {
-  int idx = rand() % table_limit;
+  int idx = rand() % table_cnt;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
@@ -350,7 +351,7 @@ void DropTable() {
 }
 
 void AlterTable() {
-  int idx = rand() % table_limit;
+  int idx = rand() % table_cnt;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
@@ -407,7 +408,7 @@ void Insert() {
     printf("Insert(): conn failed\n");
     return;
   }
-  int idx = rand() % table_limit;
+  int idx = rand() % table_cnt;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
@@ -466,7 +467,7 @@ void Delete() {
     printf("Delete(): conn failed\n");
     return;
   }
-  int idx = rand() % table_limit;
+  int idx = rand() % table_cnt;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;
@@ -494,8 +495,8 @@ void Query() {
     printf("Query(): conn failed\n");
     return;
   }
-  //int idx = rand() % table_limit;
-  int idx = rand() % table_limit + 1;
+  //int idx = rand() % table_cnt;
+  int idx = rand() % table_cnt + 1;
   string table = TablePrefix + to_string(idx);
   if (!try_lock(table))
     return;

@@ -7,7 +7,7 @@
 using namespace std;
 
 extern size_t thread_cnt;
-extern size_t table_limit;
+extern size_t table_cnt;
 extern size_t row_cnt;
 
 void usage() {
@@ -32,8 +32,8 @@ bool parse_args(int argc, char* argv[]) {
       }
     }
     if (i == 2) {
-      table_limit = stol(argv[2]);
-      if (table_limit == 0 || table_limit > 1000) {
+      table_cnt = stol(argv[2]);
+      if (table_cnt == 0 || table_cnt > 1000) {
         usage();
         return false;
       }
@@ -58,6 +58,8 @@ int main(int argc, char* argv[]) {
     return -1;
   }
   printf("conn succ\n");
+  //while (true)
+  //    ;
   if (!parse_args(argc, argv))
     return -1;
   Init();

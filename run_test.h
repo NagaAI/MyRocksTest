@@ -4,7 +4,7 @@
 
 
 extern size_t thread_cnt;
-extern size_t table_limit;
+extern size_t table_cnt;
 extern size_t row_cnt;
 
 extern void Init();

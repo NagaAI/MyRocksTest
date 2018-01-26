@@ -3,14 +3,14 @@
 //
 
 #include <assert.h>
-//#include <terark/fstring.cpp>
+#include <terark/fstring.hpp>
 #include "client.h"
 
 
 bool Mysql::connect()
 {
-  //port = terark::getEnvLong("port", 3307); // default terark
-  //printf("port used is %d\n", port);
+  port = terark::getEnvLong("port", 0); // default terark
+  printf("port used is %d\n", port);
   //mysql_init(conn_);
   conn_ = mysql_init(NULL);
   //my_bool myTrue = true;
