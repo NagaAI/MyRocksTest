@@ -70,6 +70,7 @@ void Mysql::bind_arg(MYSQL_BIND &b, const char *val, size_t length) {
 }
 
 void Mysql::execute(const std::string& str_stmt) {
+  //printf("stmt: %s\n", str_stmt.c_str());
   if (mysql_query(conn_, str_stmt.c_str())) {
     fprintf(stderr, "ERROR: mysql stmt execute = %s\n", str_stmt.c_str());
     //exit(1);
@@ -100,6 +101,17 @@ void Mysql::consume_data(MYSQL_STMT* stmt) {
     ;
 }
 
+void Mysql::consume_data() {
+  MYSQL_RES* result = mysql_store_result(conn_);
+  MYSQL_ROW row;
+  while( ( row = mysql_fetch_row(result)) != NULL ) {
+    //printf("id: %s, val: %s\n", 
+    //	   (row[0] ? row[0] : "NULL"), 
+    //	   (row[1] ? row[1] : "NULL"));
+  }
+  /* free the result set */
+  mysql_free_result(result);
+}
 MYSQL_RES* Mysql::use_result() {
   return mysql_use_result(conn_);
 }

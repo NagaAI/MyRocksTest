@@ -47,10 +47,10 @@ atomic<long> total_elapse = { 0 };
 //atomic<high_resolution_clock::time_point> total_elapse = ;
 //time_t start_tm = time(0);
 
-size_t thread_cnt = terark::getEnvLong("threadCount", 4);
-size_t table_cnt = terark::getEnvLong("tableCount", 16);
+size_t thread_cnt = terark::getEnvLong("threadCount", 1);
+size_t table_cnt = terark::getEnvLong("tableCount", 2);
 size_t row_cnt = terark::getEnvLong("insertCount", 1);
-int    test_type = terark::getEnvLong("testType", 5); // kQuery as default
+int    test_type = terark::getEnvLong("testType", 2); // kQuery as default
 
 enum test_type_t {
   kStressTest        = 0,
@@ -222,24 +222,17 @@ void execute_upsert(int thread_idx) {
     printf("ExecuteInsert(): conn failed\n");
     return;
   }
-  int round_cnt = 0, tick = 0;
+  int round_cnt = 100, tick = 200;
   string test_t;
-  if (test_type == kInsertBulkTest) {
-    tick = 20;
-    round_cnt = 100;
+  if (test_type == kInsertBulkTest)
     test_t = "[InsertBulk] ";
-  } else if (test_type == kInsertRandomTest) {
-    tick = 3000;
-    round_cnt = 10;
+  else if (test_type == kInsertRandomTest)
     test_t = "[InsertRandom] ";
-  } else if (test_type == kUpdateRandomTest) {
-    tick = 3000;
-    round_cnt = 10;
+  else if (test_type == kUpdateRandomTest)
     test_t = "[UpdateRandom] ";
-  }
   const int limit = table_cnt / thread_cnt;
   const int start_table = limit * thread_idx;
-  for (int cnt = 0; cnt < limit; cnt++) {
+  for (int cnt = 1; cnt < limit - 1; cnt++) { // skip table 0
     int table_idx = start_table + cnt;
     for (int offset = 0; offset < contents.size(); offset += round_cnt) {
       high_resolution_clock::time_point start = high_resolution_clock::now();
@@ -264,6 +257,7 @@ void execute_upsert(int thread_idx) {
 }
 
 void execute_query(int tid) {
+  std::mt19937_64 mt(tid);
   Mysql client;
   if (!client.connect()) {
     printf("Query(): conn failed\n");
@@ -272,7 +266,9 @@ void execute_query(int tid) {
   int cycle = 0;
   while (true) {
     high_resolution_clock::time_point start = high_resolution_clock::now();
-    int idx = rand() % table_cnt;
+    int idx = mt() % table_cnt;
+    if (idx == 0)
+      idx = 1;
     string table = TablePrefix + to_string(idx);
     if (cycle == 0) {
       string str_stmt = "select * from " + table +
@@ -284,10 +280,18 @@ void execute_query(int tid) {
       QueryExecute(client, str_stmt, kSuppKey, kPartKey);
     } else if (cycle == 2) {
       string str_stmt = "select * from " + table +
-	" where L_ORDERKEY = ?";
-      QueryExecute(client, str_stmt, kOrderKey, -1);
+      " where L_PARTKEY > ? limit 1";
+      QueryExecute(client, str_stmt, kPartKey, -1);
+    } else if (cycle == 3) {
+      string str_stmt = "select * from " + table +
+	" where L_PARTKEY < ? limit 1";
+      QueryExecute(client, str_stmt, kPartKey, -1);
+    } else if (cycle == 4) {
+      string str_stmt = "select * from " + table +
+	" where L_SUPPKEY < ? limit 1";
+      QueryExecute(client, str_stmt, kSuppKey, -1);
     }
-    cycle = (cycle + 1) % 3;
+    cycle = (cycle + 1) % 5;
     total_counts += row_cnt;
     total_rounds++;
     high_resolution_clock::time_point end = high_resolution_clock::now();
@@ -654,9 +658,8 @@ void Update(Mysql& client, int table_idx, int offset, int round_cnt) {
 	<< "where kOrderKey = " << results[kOrderKey].str() << " and "
 	<< "kPartKey = " << results[kPartKey].str();
 
-    printf("%s\n", sst.str().c_str());
-    //client.execute(sst.str());
-    //total_counts += 1;
+    client.execute(sst.str());
+    total_counts += 1;
   }
 }
 
@@ -750,16 +753,17 @@ void QueryExecute(Mysql& client, const std::string& str_in, int idx1, int idx2) 
     fstring(line).split('|', &results);
     string str_stmt = str_in;
     if (idx1 != -1 && idx2 != -1) {
-      replace_with(str_stmt, "?", results[idx1].c_str());
-      replace_with(str_stmt, "?", results[idx2].c_str());
-      cout << str_stmt << endl; //
-      //client.execute(str_stmt);
+      replace_with(str_stmt, "?", results[idx1].str());
+      replace_with(str_stmt, "?", results[idx2].str());
+      //printf("stmt: %s\n", str_stmt.c_str());
+      client.execute(str_stmt);
     } else if (idx1 != -1) {
-      replace_with(str_stmt, "?", results[idx1].c_str());
-      cout << str_stmt << endl; //
-      //client.execute(str_stmt);
+      replace_with(str_stmt, "?", results[idx1].str());
+      //printf("stmt: %s\n", str_stmt.c_str());
+      client.execute(str_stmt);
     }
     // consume data
+    client.consume_data();
     //MYSQL_RES *res = client.use_result();
     //client.free_result(res);
   }

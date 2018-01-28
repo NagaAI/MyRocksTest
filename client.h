@@ -55,6 +55,7 @@ public:
   MYSQL_RES* use_result();
   void       free_result(MYSQL_RES*);
   void       consume_data(MYSQL_STMT*);
+  void       consume_data();
   std::string str = R"foo(123)foo";
   
 private:
