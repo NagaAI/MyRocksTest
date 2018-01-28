@@ -59,6 +59,7 @@ enum test_type_t {
   kQueryPreparedTest,
   kInsertRandomTest  = 4,
   kUpdateRandomTest
+  kPrepare
 };
 
 enum op_type_t {
@@ -216,6 +217,17 @@ MYSQL_STMT* gen_stmt(Mysql& client, query_t sel) {
   return 0;
 }
 
+void execute_prepare() {
+  Mysql client;
+  if (!client.connect()) {
+    printf("Prepare(): conn failed\n");
+    return;
+  }
+  for (int cnt = 0; cnt < table_cnt; ++cnt) {
+    CreateTable(cnt);
+  }
+}
+
 void execute_upsert(int thread_idx) {
   Mysql client;
   if (!client.connect()) {
@@ -347,6 +359,11 @@ void execute_query_prepared(int tid) {
 
 
 void StartStress() {
+  if (test_type == kPrepare) {
+    execute_prepare();
+    return;
+  }
+
   std::vector<std::thread> threads;
   // Launoch a group of threads
   for (size_t i = 0; i < thread_cnt; ++i) {
@@ -429,9 +446,9 @@ void CreateTable(int idx) {
      << "L_TAX         DECIMAL(15,2) NOT NULL,"
      << "L_RETURNFLAG  CHAR(1) NOT NULL,"
      << "L_LINESTATUS  CHAR(1) NOT NULL,"
-    //<< "L_SHIPDATE    DATE NOT NULL,"
-    //<< "L_COMMITDATE  DATE NOT NULL,"
-    //<< "L_RECEIPTDATE DATE NOT NULL,"
+     << "L_SHIPDATE    DATE NOT NULL,"
+     << "L_COMMITDATE  DATE NOT NULL,"
+     << "L_RECEIPTDATE DATE NOT NULL,"
      << "L_SHIPINSTRUCT CHAR(25) NOT NULL,"
      << "L_SHIPMODE     CHAR(10) NOT NULL,"
      << "L_COMMENT      VARCHAR(512) NOT NULL,"
