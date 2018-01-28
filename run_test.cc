@@ -47,8 +47,8 @@ atomic<long> total_elapse = { 0 };
 //atomic<high_resolution_clock::time_point> total_elapse = ;
 //time_t start_tm = time(0);
 
-size_t thread_cnt = terark::getEnvLong("threadCount", 1);
-size_t table_cnt = terark::getEnvLong("tableCount", 2);
+size_t thread_cnt = terark::getEnvLong("threadCount", 32);
+size_t table_cnt = terark::getEnvLong("tableCount", 100);
 size_t row_cnt = terark::getEnvLong("insertCount", 1);
 int    test_type = terark::getEnvLong("testType", 2); // kQuery as default
 
