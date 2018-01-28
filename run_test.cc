@@ -548,7 +548,7 @@ void InsertBulk(Mysql& client, int table_idx, int offset, int round_cnt) {
     results.resize(0);
     fstring(line).split('|', &results);
     stringstream sst;
-    sst << "Insert into " << table << " values(" 
+    sst << "Insert into " << table << " values("
 	<< results[kOrderKey].str() << ", "
 	<< results[kPartKey].str() << ", "
 	<< results[kSuppKey].str() << ", "
@@ -559,11 +559,15 @@ void InsertBulk(Mysql& client, int table_idx, int offset, int round_cnt) {
 	<< results[kTax].str() << ", "
 	<< "'"  << results[kReturnFlag].str()   << "'"  << ", "
 	<< "'"  << results[kLineStatus].str()   << "'"  << ", "
+	<< "\"" << results[kShipDate].str() << "\"" << ", "
+      	<< "\"" << results[kCommitDate].str() << "\"" << ", "
+	<< "\"" << results[kRecepitDate].str() << "\"" << ", "
 	<< "\"" << results[kShipinStruct].str() << "\"" << ", "
 	<< "\"" << results[kShipMode].str()     << "\"" << ", "
 	<< "\"" << results[kComment].str()      << "\"" << ")";
+
     client.execute(sst.str());
-    total_counts ++;
+    total_counts += 1;
   }
   //printf("done Insert table: %s%d\n", TablePrefix.c_str(), table_idx);
 }
