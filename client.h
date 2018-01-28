@@ -45,6 +45,7 @@ public:
   void bind_arg(MYSQL_BIND &b, const double &val);
   void bind_arg(MYSQL_BIND &b, const char *val, size_t length);
   void execute(MYSQL_STMT *stmt);
+  void execute(const std::string& str_stmt);
   void bind_execute(MYSQL_STMT *stmt, MYSQL_BIND *params);
   /*
    * Commands out of sync; you can't run this command now.

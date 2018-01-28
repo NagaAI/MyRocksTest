@@ -7,8 +7,7 @@
 #include "client.h"
 
 
-bool Mysql::connect()
-{
+bool Mysql::connect() {
   port = terark::getEnvLong("port", 0); // default terark
   printf("port used is %d\n", port);
   //mysql_init(conn_);
@@ -68,6 +67,13 @@ void Mysql::bind_arg(MYSQL_BIND &b, const char *val, size_t length) {
   b.buffer_length = length;
   b.buffer_type =  MYSQL_TYPE_STRING;
   b.buffer = (void *)val;
+}
+
+void Mysql::execute(const std::string& str_stmt) {
+  if (mysql_query(conn_, str_stmt.c_str())) {
+    fprintf(stderr, "ERROR: mysql stmt execute = %s\n", str_stmt.c_str());
+    //exit(1);
+  }
 }
 
 void Mysql::execute(MYSQL_STMT *stmt) {
