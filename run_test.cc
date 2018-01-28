@@ -50,14 +50,14 @@ atomic<long> total_elapse = { 0 };
 size_t thread_cnt = terark::getEnvLong("threadCount", 4);
 size_t table_cnt = terark::getEnvLong("tableCount", 16);
 size_t row_cnt = terark::getEnvLong("insertCount", 1);
-int    test_type = terark::getEnvLong("testType", 2); // kQuery as default
+int    test_type = terark::getEnvLong("testType", 5); // kQuery as default
 
 enum test_type_t {
   kStressTest        = 0,
   kInsertBulkTest    = 1,
   kQueryTest,
   kQueryPreparedTest,
-  kInsertRandomTest,
+  kInsertRandomTest  = 4,
   kUpdateRandomTest
 };
 
@@ -108,8 +108,8 @@ void Insert();
 void Delete();
 void Query();
 
-
 void InsertBulk(Mysql& client, int table_idx, int offset, int round_cnt);
+void Update(Mysql& client, int table_idx, int offset, int round_cnt);
 void QueryExecute(Mysql& client, const std::string& str_in, int idx1, int idx2);
 void QueryExecutePrepared(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2);
 void AlterExecute(Mysql& client, const std::string& stmt);
@@ -216,27 +216,44 @@ MYSQL_STMT* gen_stmt(Mysql& client, query_t sel) {
   return 0;
 }
 
-void execute_bulkload(int thread_idx) {
+void execute_upsert(int thread_idx) {
   Mysql client;
   if (!client.connect()) {
-    printf("Bulkload(): conn failed\n");
+    printf("ExecuteInsert(): conn failed\n");
     return;
+  }
+  int round_cnt = 0, tick = 0;
+  string test_t;
+  if (test_type == kInsertBulkTest) {
+    tick = 20;
+    round_cnt = 100;
+    test_t = "[InsertBulk] ";
+  } else if (test_type == kInsertRandomTest) {
+    tick = 3000;
+    round_cnt = 10;
+    test_t = "[InsertRandom] ";
+  } else if (test_type == kUpdateRandomTest) {
+    tick = 3000;
+    round_cnt = 10;
+    test_t = "[UpdateRandom] ";
   }
   const int limit = table_cnt / thread_cnt;
   const int start_table = limit * thread_idx;
   for (int cnt = 0; cnt < limit; cnt++) {
     int table_idx = start_table + cnt;
-    const int round_cnt = 100;
     for (int offset = 0; offset < contents.size(); offset += round_cnt) {
       high_resolution_clock::time_point start = high_resolution_clock::now();
-      InsertBulk(client, table_idx, offset, round_cnt);
+      if (test_type == kUpdateRandomTest)
+	Update(client, table_idx, offset, round_cnt);
+      else
+	InsertBulk(client, table_idx, offset, round_cnt);
       high_resolution_clock::time_point end = high_resolution_clock::now();
       duration<int,std::micro> time_span = duration_cast<duration<int,std::micro>>(end - start);
       total_elapse += time_span.count();
       total_rounds ++;
-      if (total_rounds.load() % 20 == 0) {
-	printf("== TPS %f, insert %lld, time elapse %f sec\n", 
-	       (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
+      if (total_rounds.load() % tick == 0) {
+	printf("== %s, TPS %f, insert %lld, time elapse %f sec\n", 
+	       test_t.c_str(), (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
 	       total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
 	total_counts = 0;
 	total_elapse = 0;
@@ -350,7 +367,7 @@ void StartStress() {
       threads.push_back(std::thread(execute, i));
       break;
     case kInsertBulkTest:
-      threads.push_back(std::thread(execute_bulkload, i));
+      threads.push_back(std::thread(execute_upsert, i));
       break;
     case kQueryTest:
       threads.push_back(std::thread(execute_query, i));
@@ -359,8 +376,10 @@ void StartStress() {
       threads.push_back(std::thread(execute_query_prepared, i));
       break;
     case kInsertRandomTest:
+      threads.push_back(std::thread(execute_upsert, i));
       break;
     case kUpdateRandomTest:
+      threads.push_back(std::thread(execute_upsert, i));
       break;
     }
     
@@ -611,6 +630,34 @@ void InsertBulk(Mysql& client, int table_idx, int offset, int round_cnt) {
     total_counts += 1;
   }
   //printf("done Insert table: %s%d\n", TablePrefix.c_str(), table_idx);
+}
+
+void Update(Mysql& client, int table_idx, int offset, int round_cnt) {
+  string table = TablePrefix + to_string(table_idx);
+  std::vector<fstring> results;
+  for (int i = 0; i < round_cnt; i++) {
+    if (offset + i >= contents.size())
+      continue;
+    const string& line = contents[offset + i];
+    results.resize(0);
+    fstring(line).split('|', &results);
+    stringstream sst;
+    int sup = atoi(results[kSuppKey].data()) * (offset - round_cnt) + round_cnt;
+    int lin = atoi(results[kLineNumber].data()) * offset - round_cnt;
+    fstring comm = results[kComment];
+    if (comm.size() > 100)
+      comm = comm.substr(1);
+    sst << "Update " << table << " set "
+	<< " L_SUPPKEY=" << to_string(sup) << ", "
+	<< " L_LINENUMBER=" << to_string(lin) << ", "
+	<< " L_COMMENT=" << "\"" << comm.str()      << "\"" << " "
+	<< "where kOrderKey = " << results[kOrderKey].str() << " and "
+	<< "kPartKey = " << results[kPartKey].str();
+
+    printf("%s\n", sst.str().c_str());
+    //client.execute(sst.str());
+    //total_counts += 1;
+  }
 }
 
 
