@@ -248,7 +248,39 @@ void execute_prepare() {
   }
 }
 
-void execute_upsert(int thread_idx) {
+void execute_update(int idx) {
+  std::mt19937_64 mt(idx);
+  Mysql client;
+  if (!client.connect()) {
+    printf("ExecuteInsert(): conn failed\n");
+    return;
+  }
+  int round_cnt = 1, tick = 10000;
+  string test_t = "[UpdateRandom] ";
+  while (true) {
+    int table_idx = mt() % table_cnt;
+    if (table_idx == 0)
+      table_idx = 1;
+    int offset = mt() % contents.size();
+    high_resolution_clock::time_point start = high_resolution_clock::now();
+    Update(client, table_idx, offset, round_cnt);
+    high_resolution_clock::time_point end = high_resolution_clock::now();
+    duration<int,std::micro> time_span = duration_cast<duration<int,std::micro>>(end - start);
+    total_elapse += time_span.count();
+    total_rounds ++;
+    if (total_rounds.load() % tick == 0) {
+      printf("== %s, TPS %f, insert %lld, time elapse %f sec\n", 
+	     test_t.c_str(), (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
+	     total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
+      total_counts = 0;
+      total_elapse = 0;
+      total_rounds = 0;
+    }
+  }
+}
+
+void execute_insert(int thread_idx) {
+  std::mt19937_64 mt(thread_idx);
   Mysql client;
   if (!client.connect()) {
     printf("ExecuteInsert(): conn failed\n");
@@ -260,18 +292,13 @@ void execute_upsert(int thread_idx) {
     test_t = "[InsertBulk] ";
   else if (test_type == kInsertRandomTest)
     test_t = "[InsertRandom] ";
-  else if (test_type == kUpdateRandomTest)
-    test_t = "[UpdateRandom] ";
   const int limit = table_cnt / thread_cnt;
   const int start_table = limit * thread_idx;
   for (int cnt = 1; cnt < limit - 1; cnt++) { // skip table 0
     int table_idx = start_table + cnt;
     for (int offset = 0; offset < contents.size(); offset += round_cnt) {
       high_resolution_clock::time_point start = high_resolution_clock::now();
-      if (test_type == kUpdateRandomTest)
-	Update(client, table_idx, offset, round_cnt);
-      else
-	InsertBulk(client, table_idx, offset, round_cnt);
+      InsertBulk(client, table_idx, offset, round_cnt);
       high_resolution_clock::time_point end = high_resolution_clock::now();
       duration<int,std::micro> time_span = duration_cast<duration<int,std::micro>>(end - start);
       total_elapse += time_span.count();
@@ -392,7 +419,7 @@ void StartStress() {
       threads.push_back(std::thread(execute, i));
       break;
     case kInsertBulkTest:
-      threads.push_back(std::thread(execute_upsert, i));
+      threads.push_back(std::thread(execute_insert, i));
       break;
     case kQueryTest:
       threads.push_back(std::thread(execute_query, i));
@@ -401,10 +428,10 @@ void StartStress() {
       threads.push_back(std::thread(execute_query_prepared, i));
       break;
     case kInsertRandomTest:
-      threads.push_back(std::thread(execute_upsert, i));
+      threads.push_back(std::thread(execute_insert, i));
       break;
     case kUpdateRandomTest:
-      threads.push_back(std::thread(execute_upsert, i));
+      threads.push_back(std::thread(execute_update, i));
       break;
     }
     
