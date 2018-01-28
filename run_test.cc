@@ -114,17 +114,21 @@ void QueryExecute(Mysql& client, const std::string& str_in, int idx1, int idx2);
 void QueryExecutePrepared(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2);
 void AlterExecute(Mysql& client, const std::string& stmt);
 
-void Init() {
+void Init(const string& inpath) {
   srand (time(NULL));
   // read in data
   string path = "./lineitem_2m.tbl";
+  if (!inpath.empty())
+    path = inpath;
   ifstream in(path.c_str());
+  assert(in);
   string line;
   while (getline(in, line)) {
     if (line.size() < 10)
       continue;
     contents.push_back(line);
   }
+  in.close();
   if (test_type == kInsertRandomTest ||
       test_type == kUpdateRandomTest) {
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
