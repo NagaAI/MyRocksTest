@@ -17,17 +17,14 @@
 #include <thread>
 #include <vector>
 
-//#include <boost/algorithm/string.hpp>
-//#include <boost/utility/string_ref.hpp>
+#include <boost/algorithm/string.hpp>
+#include <boost/utility/string_ref.hpp>
 
-#include <terark/fstring.cpp>
-#include <terark/lcast.cpp>
 #include "client.h"
 #include "run_test.h"
 
 using namespace std;
 using namespace std::chrono;
-using namespace terark;
 
 //typedef function<void()> executor;
 //vector<executor> executors;
@@ -47,10 +44,10 @@ atomic<long> total_elapse = { 0 };
 //atomic<high_resolution_clock::time_point> total_elapse = ;
 //time_t start_tm = time(0);
 
-size_t thread_cnt = terark::getEnvLong("threadCount", 32);
-size_t table_cnt = terark::getEnvLong("tableCount", 100);
-size_t row_cnt = terark::getEnvLong("insertCount", 1);
-int    test_type = terark::getEnvLong("testType", 2); // kQuery as default
+size_t thread_cnt = 32;
+size_t table_cnt = 100;
+size_t row_cnt = 1;
+int    test_type = 2; // kQuery as default
 
 enum test_type_t {
   kStressTest        = 0,
@@ -116,6 +113,25 @@ void QueryExecutePrepared(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2);
 void AlterExecute(Mysql& client, const std::string& stmt);
 
 void Init(const string& inpath) {
+  {
+    char* pth_cnt = getenv("threadCount");
+    if (pth_cnt)
+      thread_cnt = atoi(pth_cnt);
+    assert(thread_cnt < 1000);
+  }
+  {
+    char* pta_cnt = getenv("tableCount");
+    if (pta_cnt)
+      table_cnt = atoi(pta_cnt);
+    assert(table_cnt < 1000);
+  }
+  {
+    char* pt_type = getenv("testType");
+    if (pt_type)
+      test_type = atoi(pt_type);
+    assert(0 < test_type && test_type < 7);
+  }
+
   srand (time(NULL));
   // read in data
   string path = "./lineitem_2m.tbl";
@@ -565,32 +581,31 @@ void Insert() {
   MYSQL_STMT* stmt = client.prepare(str_stmt);
   int row_start = rand() % contents.size();
   int limit = min<size_t>(row_cnt, contents.size() - row_start + 1);
-  std::vector<fstring> results;
-  printf("Insert table: %s%d, cnt %d\n", TablePrefix.c_str(), idx, limit);
+  //printf("Insert table: %s%d, cnt %d\n", TablePrefix.c_str(), idx, limit);
   for (int cnt = 0; cnt < row_cnt; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
 
     const string& line = contents[cnt + row_start];
-    results.resize(0);
-    fstring(line).split('|', &results);
+    std::vector<string> results;
+    boost::split(results, line, [](char c){return c == '|';});
 
     MYSQL_BIND in_params[17];
     memset(in_params, 0, sizeof(in_params));
 
-    client.bind_arg(in_params[0], atoi(results[kOrderKey].data()));
-    client.bind_arg(in_params[1], atoi(results[kPartKey].data()));
+    client.bind_arg(in_params[0], atoi(results[kOrderKey].c_str()));
+    client.bind_arg(in_params[1], atoi(results[kPartKey].c_str()));
 
-    client.bind_arg(in_params[2], atoi(results[kSuppKey].data()));
-    client.bind_arg(in_params[3], atoi(results[kLineNumber].data()));
+    client.bind_arg(in_params[2], atoi(results[kSuppKey].c_str()));
+    client.bind_arg(in_params[3], atoi(results[kLineNumber].c_str()));
 
-    client.bind_arg(in_params[4], atof(results[kQuantity].data()));
-    client.bind_arg(in_params[5], atof(results[kExtendedPrice].data()));
-    client.bind_arg(in_params[6], atof(results[kDiscount].data()));
-    client.bind_arg(in_params[7], atof(results[kTax].data()));
+    client.bind_arg(in_params[4], atof(results[kQuantity].c_str()));
+    client.bind_arg(in_params[5], atof(results[kExtendedPrice].c_str()));
+    client.bind_arg(in_params[6], atof(results[kDiscount].c_str()));
+    client.bind_arg(in_params[7], atof(results[kTax].c_str()));
 
-    client.bind_arg(in_params[8], results[kReturnFlag].data(), 1);
-    client.bind_arg(in_params[9], results[kLineStatus].data(), 1);
+    client.bind_arg(in_params[8], results[kReturnFlag].c_str(), 1);
+    client.bind_arg(in_params[9], results[kLineStatus].c_str(), 1);
 
     // shipdate = 10
     // commitdate = 11
@@ -609,31 +624,32 @@ void Insert() {
 
 void InsertBulk(Mysql& client, int table_idx, int offset, int round_cnt) {
   string table = TablePrefix + to_string(table_idx);
-  std::vector<fstring> results;
+
   for (int i = 0; i < round_cnt; i++) {
     if (offset + i >= contents.size())
       continue;
     const string& line = contents[offset + i];
-    results.resize(0);
-    fstring(line).split('|', &results);
+    std::vector<string> results;
+    boost::split(results, line, [](char c){return c == '|';});
+
     stringstream sst;
     sst << "Insert into " << table << " values("
-	<< results[kOrderKey].str() << ", "
-	<< results[kPartKey].str() << ", "
-	<< results[kSuppKey].str() << ", "
-	<< results[kLineNumber].str() << ", "
-	<< results[kQuantity].str() << ", "
-	<< results[kExtendedPrice].str() << ", "
-	<< results[kDiscount].str() << ", "
-	<< results[kTax].str() << ", "
-	<< "'"  << results[kReturnFlag].str()   << "'"  << ", "
-	<< "'"  << results[kLineStatus].str()   << "'"  << ", "
-	<< "\"" << results[kShipDate].str() << "\"" << ", "
-      	<< "\"" << results[kCommitDate].str() << "\"" << ", "
-	<< "\"" << results[kRecepitDate].str() << "\"" << ", "
-	<< "\"" << results[kShipinStruct].str() << "\"" << ", "
-	<< "\"" << results[kShipMode].str()     << "\"" << ", "
-	<< "\"" << results[kComment].str()      << "\"" << ")";
+	<< results[kOrderKey] << ", "
+	<< results[kPartKey] << ", "
+	<< results[kSuppKey] << ", "
+	<< results[kLineNumber] << ", "
+	<< results[kQuantity] << ", "
+	<< results[kExtendedPrice] << ", "
+	<< results[kDiscount] << ", "
+	<< results[kTax] << ", "
+	<< "'"  << results[kReturnFlag]   << "'"  << ", "
+	<< "'"  << results[kLineStatus]   << "'"  << ", "
+	<< "\"" << results[kShipDate] << "\"" << ", "
+      	<< "\"" << results[kCommitDate] << "\"" << ", "
+	<< "\"" << results[kRecepitDate] << "\"" << ", "
+	<< "\"" << results[kShipinStruct] << "\"" << ", "
+	<< "\"" << results[kShipMode]     << "\"" << ", "
+	<< "\"" << results[kComment]      << "\"" << ")";
 
     client.execute(sst.str());
     total_counts += 1;
@@ -643,25 +659,25 @@ void InsertBulk(Mysql& client, int table_idx, int offset, int round_cnt) {
 
 void Update(Mysql& client, int table_idx, int offset, int round_cnt) {
   string table = TablePrefix + to_string(table_idx);
-  std::vector<fstring> results;
   for (int i = 0; i < round_cnt; i++) {
     if (offset + i >= contents.size())
       continue;
     const string& line = contents[offset + i];
-    results.resize(0);
-    fstring(line).split('|', &results);
+    std::vector<string> results;
+    boost::split(results, line, [](char c){return c == '|';});
+
     stringstream sst;
-    int sup = atoi(results[kSuppKey].data()) * (offset - round_cnt) + round_cnt;
-    int lin = atoi(results[kLineNumber].data()) * offset - round_cnt;
-    fstring comm = results[kComment];
+    int sup = atoi(results[kSuppKey].c_str()) * (offset - round_cnt) + round_cnt;
+    int lin = atoi(results[kLineNumber].c_str()) * offset - round_cnt;
+    string comm = results[kComment];
     if (comm.size() > 100)
       comm = comm.substr(1);
     sst << "Update " << table << " set "
 	<< " L_SUPPKEY=" << to_string(sup) << ", "
 	<< " L_LINENUMBER=" << to_string(lin) << ", "
-	<< " L_COMMENT=" << "\"" << comm.str()      << "\"" << " "
-	<< "where L_ORDERKEY = " << results[kOrderKey].str() << " and "
-	<< "L_PARTKEY = " << results[kPartKey].str();
+	<< " L_COMMENT=" << "\"" << comm      << "\"" << " "
+	<< "where L_ORDERKEY = " << results[kOrderKey] << " and "
+	<< "L_PARTKEY = " << results[kPartKey];
 
     client.execute(sst.str());
     total_counts += 1;
@@ -749,22 +765,19 @@ void replace_with(string& str, const string& from, const string& to) {
 void QueryExecute(Mysql& client, const std::string& str_in, int idx1, int idx2) {
   int row_start = rand() % contents.size();
   int limit = min<size_t>(row_cnt, contents.size() - row_start + 1);
-  std::vector<fstring> results;
   for (int cnt = 0; cnt < row_cnt; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
     const string& line = contents[cnt + row_start];
-    results.resize(0);
-    fstring(line).split('|', &results);
+    std::vector<string> results;
+    boost::split(results, line, [](char c){return c == '|';});
     string str_stmt = str_in;
     if (idx1 != -1 && idx2 != -1) {
-      replace_with(str_stmt, "?", results[idx1].str());
-      replace_with(str_stmt, "?", results[idx2].str());
-      //printf("stmt: %s\n", str_stmt.c_str());
+      replace_with(str_stmt, "?", results[idx1]);
+      replace_with(str_stmt, "?", results[idx2]);
       client.execute(str_stmt);
     } else if (idx1 != -1) {
-      replace_with(str_stmt, "?", results[idx1].str());
-      //printf("stmt: %s\n", str_stmt.c_str());
+      replace_with(str_stmt, "?", results[idx1]);
       client.execute(str_stmt);
     }
     // consume data
@@ -778,21 +791,20 @@ void QueryExecutePrepared(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2) {
   int row_start = rand() % contents.size();
   int limit = min<size_t>(row_cnt, contents.size() - row_start + 1);
   //printf("table: stmt %s, cnt %d\n", str.c_str(), limit);
-  std::vector<fstring> results;
   for (int cnt = 0; cnt < row_cnt; cnt++) {
     if (row_start + cnt >= contents.size())
       break;
     const string& line = contents[cnt + row_start];
-    results.resize(0);
-    fstring(line).split('|', &results);
+    std::vector<string> results;
+    boost::split(results, line, [](char c){return c == '|';});
     if (idx1 != -1 && idx2 != -1) {
       MYSQL_BIND in_params[2];
-      client.bind_arg(in_params[0], atoi(results[idx1].data()));
-      client.bind_arg(in_params[1], atoi(results[idx2].data()));
+      client.bind_arg(in_params[0], atoi(results[idx1].c_str()));
+      client.bind_arg(in_params[1], atoi(results[idx2].c_str()));
       client.bind_execute(stmt, in_params);
     } else if (idx1 != -1) {
       MYSQL_BIND in_params[1];
-      client.bind_arg(in_params[0], atoi(results[idx1].data()));
+      client.bind_arg(in_params[0], atoi(results[idx1].c_str()));
       client.bind_execute(stmt, in_params);
     } else {
       MYSQL_BIND in_params[1];

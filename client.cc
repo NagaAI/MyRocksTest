@@ -3,22 +3,37 @@
 //
 
 #include <assert.h>
-#include <terark/fstring.hpp>
+#include <stdlib.h>
+//#include <terark/fstring.hpp>
 #include "client.h"
 
 
 bool Mysql::connect() {
-  port = terark::getEnvLong("port", 0); // default terark
-  printf("port used is %d\n", port);
-  //mysql_init(conn_);
+  {
+    char* cport = getenv("port");
+    if (cport)
+      port_ = atoi(cport);
+    assert(port_ < 70000);
+  }
+  {
+    char* phost = getenv("host");
+    if (phost)
+      host_ = phost;
+    assert(!host_.empty());
+  }
+  {
+    char* pdb = getenv("db");
+    if (pdb)
+      db_ = pdb;
+    assert(!db_.empty());
+  }
+
   conn_ = mysql_init(NULL);
-  //my_bool myTrue = true;
-  //mysql_options(conn, MYSQL_OPT_RECONNECT, &myTrue);
   unsigned long client_flag = CLIENT_REMEMBER_OPTIONS;
-  if(!mysql_real_connect(conn_, host, user, passwd, db, port, NULL, client_flag)) {
+  if(!mysql_real_connect(conn_, host_.c_str(), user, passwd, db_.c_str(), port_, NULL, client_flag)) {
     fprintf(stderr,
             "ERROR: mysql_real_connect(host=%s, user=%s, passwd=%s, db=%s, port=%d, NULL, CLIENT_REMEMBER_OPTIONS) = %s\n"
-            "database connection fails.\n", host, user, passwd, db, port, mysql_error(conn_));
+            "database connection fails.\n", host_.c_str(), user, passwd, db_.c_str(), port_, mysql_error(conn_));
     return false;
   }
 

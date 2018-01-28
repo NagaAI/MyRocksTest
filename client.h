@@ -16,14 +16,13 @@ class Mysql
 {
 public:
   Mysql() {
-    //connect();
+    host_ = "127.0.0.1";
+    db_ = "tpch";
   }
-  Mysql(const char *_host, const char *_user, const char *_passwd, const char *_db, const unsigned int &_port)
+  /*Mysql(const char *_host, const char *_user, const char *_passwd, const char *_db, const unsigned int &_port)
       : host(_host), user(_user), passwd(_passwd), db(_db), port(_port) {
     connect();
-  }
-	  //Mysql(const char *_host, const char *_user, const char *_passwd, const char *_db) :
-          //Mysql(_host, _user, _passwd, _db, 3306) { }
+    }*/
 
   ~Mysql() {
     mysql_close(conn_);
@@ -59,12 +58,12 @@ public:
   std::string str = R"foo(123)foo";
   
 private:
-  const char *host = "127.0.0.1";
+  std::string host_;
   const char *user = "root";
   const char *passwd = "";
-  const char *db = "tpch";
+  std::string db_;
   //const unsigned int port = 3336;   // 120G data, innodb, QPS
-  unsigned int port = 3307; // 120G data, Terark, QPS
+  unsigned int port_ = 3307; // 120G data, Terark, QPS
   //const unsigned int port = 3316;  // no data, Terark, CRUD test
 
   MYSQL *conn_;
