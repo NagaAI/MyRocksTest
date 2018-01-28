@@ -58,7 +58,7 @@ enum test_type_t {
   kQueryTest,
   kQueryPreparedTest,
   kInsertRandomTest  = 4,
-  kUpdateRandomTest
+  kUpdateRandomTest,
   kPrepare
 };
 
@@ -439,7 +439,7 @@ void CreateTable(int idx) {
 
   printf("CreateTable: %s%d\n", TablePrefix.c_str(), idx);
   stringstream ss;
-  ss << "(id BIGINT NOT NULL AUTO_INCREMENT, "
+  ss << "("                          //"(id BIGINT NOT NULL AUTO_INCREMENT, "
      << "L_ORDERKEY    INT NOT NULL, "
      << "L_PARTKEY     INT NOT NULL,"
      << "L_SUPPKEY     INTEGER NOT NULL,"
@@ -456,7 +456,7 @@ void CreateTable(int idx) {
      << "L_SHIPINSTRUCT CHAR(25) NOT NULL,"
      << "L_SHIPMODE     CHAR(10) NOT NULL,"
      << "L_COMMENT      VARCHAR(512) NOT NULL,"
-     << "PRIMARY KEY (id),"
+     << "PRIMARY KEY (L_ORDERKEY, L_PARTKEY),"
      << "INDEX L_ORDER_PART (L_ORDERKEY, L_PARTKEY),"
      << "INDEX L_ORDER  (L_ORDERKEY),"
      << "INDEX L_ORDER_SUPP (L_ORDERKEY, L_SUPPKEY),"
