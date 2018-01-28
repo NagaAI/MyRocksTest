@@ -11,10 +11,12 @@ extern size_t table_cnt;
 extern size_t row_cnt;
 
 void usage() {
-  printf("usage: $main [thread_cnt] [table_cnt] [row_cnt]\n");
+  printf("usage: $main input_file_name");
+  /*printf("usage: $main [thread_cnt] [table_cnt] [row_cnt]\n");
   printf("\tthread_cnt [1, 100], default 1\n");
   printf("\table_cnt [1, 1000], default 100\n");
   printf("\trow_cnt [100, 10M], default 1000\n");
+  */
   exit(-1);
 }
 
@@ -58,11 +60,11 @@ int main(int argc, char* argv[]) {
     return -1;
   }
   printf("conn succ\n");
-  //while (true)
-  //    ;
-  if (!parse_args(argc, argv))
-    return -1;
-  Init();
+  string input;
+  if (argc == 2) {
+    input = argv[1];
+  }
+  Init(input);
   StartStress();
   return 0;
 }
