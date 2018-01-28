@@ -10,6 +10,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <random>       // std::default_random_engine
 #include <set>
 #include <sstream>
 #include <string>
@@ -49,6 +50,16 @@ atomic<long> total_elapse = { 0 };
 size_t thread_cnt = terark::getEnvLong("threadCount", 4);
 size_t table_cnt = terark::getEnvLong("tableCount", 16);
 size_t row_cnt = terark::getEnvLong("insertCount", 1);
+int    test_type = terark::getEnvLong("testType", 2); // kQuery as default
+
+enum test_type_t {
+  kStressTest        = 0,
+  kInsertBulkTest    = 1,
+  kQueryTest,
+  kQueryPreparedTest,
+  kInsertRandomTest,
+  kUpdateRandomTest
+};
 
 enum op_type_t {
   kCreateTable = 0,
@@ -90,6 +101,14 @@ enum field_t {
 //string TablePrefix = "terark_";
 string TablePrefix = "lineitem";
 
+void CreateTable(int);
+void DropTable();
+void AlterTable();
+void Insert();
+void Delete();
+void Query();
+
+
 void InsertBulk(Mysql& client, int table_idx, int offset, int round_cnt);
 void QueryExecute(Mysql& client, const std::string& str_in, int idx1, int idx2);
 void QueryExecutePrepared(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2);
@@ -105,6 +124,11 @@ void Init() {
     if (line.size() < 10)
       continue;
     contents.push_back(line);
+  }
+  if (test_type == kInsertRandomTest ||
+      test_type == kUpdateRandomTest) {
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    std::shuffle(contents.begin(), contents.end(), std::default_random_engine(seed));
   }
 }
 
@@ -321,10 +345,28 @@ void StartStress() {
   std::vector<std::thread> threads;
   // Launoch a group of threads
   for (size_t i = 0; i < thread_cnt; ++i) {
-    //threads.push_back(std::thread(execute, i));
+    switch (test_type) {
+    case kStressTest:
+      threads.push_back(std::thread(execute, i));
+      break;
+    case kInsertBulkTest:
+      threads.push_back(std::thread(execute_bulkload, i));
+      break;
+    case kQueryTest:
+      threads.push_back(std::thread(execute_query, i));
+      break;
+    case kQueryPreparedTest:
+      threads.push_back(std::thread(execute_query_prepared, i));
+      break;
+    case kInsertRandomTest:
+      break;
+    case kUpdateRandomTest:
+      break;
+    }
+    
     //threads.push_back(std::thread(execute_query_prepared, i));
-    //threads.push_back(std::thread(execute_query, i));
-    threads.push_back(std::thread(execute_bulkload, i));
+    //
+    
     printf("thread %d start. \n", i);
   }
 
@@ -539,7 +581,6 @@ void Insert() {
 
 void InsertBulk(Mysql& client, int table_idx, int offset, int round_cnt) {
   string table = TablePrefix + to_string(table_idx);
-  //CreateTable(idx);
   std::vector<fstring> results;
   for (int i = 0; i < round_cnt; i++) {
     if (offset + i >= contents.size())
