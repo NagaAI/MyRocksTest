@@ -328,22 +328,6 @@ void execute_query_prepared(int tid) {
     } else if (cycle == 2) {
       QueryExecutePrepared(client, stmt, kOrderKey, -1);
     }
-
-    /*if (cycle == 4) { // '>' '<' part test
-      stmt = gen_stmt(client, 4);
-      start = time(0);
-      QueryExecutePrepared(client, stmt, kOrderKey, kPartKey);
-    } else if (cycle == 5) {
-      stmt = gen_stmt(client, 2);
-      start = time(0);
-      QueryExecutePrepared(client, stmt, kOrderKey, -1);
-      //printf("done query orderkey < \n");
-    } else if (cycle == 6) {
-      stmt = gen_stmt(client, 2);
-      start = time(0);
-      QueryExecutePrepared(client, stmt, kOrderKey, kPartKey);
-      }*/
-
     cycle = (cycle + 1) % 3;
     total_counts += row_cnt;
     total_rounds++;
@@ -655,8 +639,8 @@ void Update(Mysql& client, int table_idx, int offset, int round_cnt) {
 	<< " L_SUPPKEY=" << to_string(sup) << ", "
 	<< " L_LINENUMBER=" << to_string(lin) << ", "
 	<< " L_COMMENT=" << "\"" << comm.str()      << "\"" << " "
-	<< "where kOrderKey = " << results[kOrderKey].str() << " and "
-	<< "kPartKey = " << results[kPartKey].str();
+	<< "where L_ORDERKEY = " << results[kOrderKey].str() << " and "
+	<< "L_PARTKEY = " << results[kPartKey].str();
 
     client.execute(sst.str());
     total_counts += 1;

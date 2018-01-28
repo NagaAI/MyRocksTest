@@ -70,7 +70,6 @@ void Mysql::bind_arg(MYSQL_BIND &b, const char *val, size_t length) {
 }
 
 void Mysql::execute(const std::string& str_stmt) {
-  //printf("stmt: %s\n", str_stmt.c_str());
   if (mysql_query(conn_, str_stmt.c_str())) {
     fprintf(stderr, "ERROR: mysql stmt execute = %s\n", str_stmt.c_str());
     //exit(1);
