@@ -5,12 +5,14 @@
 #ifndef MEDIAWIKI_DATABASE_BENCHMARK_MYSQL_H
 #define MEDIAWIKI_DATABASE_BENCHMARK_MYSQL_H
 
-#include "mysql.h"
+#include <assert.h>
 #include <cstdio>
 #include <string>
 #include <cstring>
 #include <errmsg.h>
 #include <vector>
+
+#include "mysql.h"
 
 class Mysql
 {
@@ -18,7 +20,19 @@ public:
   Mysql() {
     host_ = "127.0.0.1";
     db_ = "tpch";
+    //
+    char* cport = getenv("port");
+    if (cport)
+      port_ = atoi(cport);
+    assert(port_ < 70000);
   }
+
+ Mysql(const std::string& port_name) {
+   char* cport = getenv(port_name.c_str());
+   assert(cport != nullptr);
+   port_ = atoi(cport);
+   assert(port_ < 70000);
+ }
   /*Mysql(const char *_host, const char *_user, const char *_passwd, const char *_db, const unsigned int &_port)
       : host(_host), user(_user), passwd(_passwd), db(_db), port(_port) {
     connect();
@@ -37,6 +51,8 @@ public:
 
   bool connect();
 
+  static void verify_data(MYSQL_RES* res, MYSQL_RES* ref_res);
+
 public:
   MYSQL_STMT *prepare(std::string query);
   bool release_stmt(MYSQL_STMT* stmt);
@@ -51,6 +67,7 @@ public:
    * will happen if you try to execute two queries that return data without 
    * calling mysql_use_result() or mysql_store_result() in between.
    */
+  MYSQL_RES* store_result();
   MYSQL_RES* use_result();
   void       free_result(MYSQL_RES*);
   void       consume_data(MYSQL_STMT*);

@@ -10,12 +10,6 @@
 
 bool Mysql::connect() {
   {
-    char* cport = getenv("port");
-    if (cport)
-      port_ = atoi(cport);
-    assert(port_ < 70000);
-  }
-  {
     char* phost = getenv("host");
     if (phost)
       host_ = phost;
@@ -115,6 +109,28 @@ void Mysql::consume_data(MYSQL_STMT* stmt) {
     ;
 }
 
+void Mysql::verify_data(MYSQL_RES* res, MYSQL_RES* ref_res) {
+  assert(res && ref_res);
+  assert(mysql_num_fields(res) == mysql_num_fields(ref_res));
+  unsigned int num_fields = mysql_num_fields(res);
+  MYSQL_ROW row = mysql_fetch_row(res),
+    ref_row = mysql_fetch_row(ref_res);
+  assert(ref_row != NULL && row != NULL);
+  { // assume one row
+    unsigned long *ref_lengths = mysql_fetch_lengths(ref_res);
+    unsigned long *lengths = mysql_fetch_lengths(res);
+    for (int i = 0; i < num_fields; i++) {
+      std::string str(row[i], lengths[i]);
+      std::string ref_str(ref_row[i], ref_lengths[i]);
+      assert(str == ref_str);
+      /*if (ref_str != str) {
+	printf("expected: [%s], actual [%s] ",
+	       ref_str.c_str(), str.c_str());
+	       }*/
+    }
+  }
+}
+
 void Mysql::consume_data(std::vector<std::string>& inputs) {
   MYSQL_RES* result = mysql_store_result(conn_);
   /*MYSQL_ROW row;
@@ -134,6 +150,11 @@ void Mysql::consume_data(std::vector<std::string>& inputs) {
   /* free the result set */
   mysql_free_result(result);
 }
+
+MYSQL_RES* Mysql::store_result() {
+  return mysql_store_result(conn_);
+}
+
 MYSQL_RES* Mysql::use_result() {
   return mysql_use_result(conn_);
 }
