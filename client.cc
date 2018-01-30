@@ -115,6 +115,10 @@ void Mysql::verify_data(MYSQL_RES* res, MYSQL_RES* ref_res) {
   unsigned int num_fields = mysql_num_fields(res);
   MYSQL_ROW row = mysql_fetch_row(res),
     ref_row = mysql_fetch_row(ref_res);
+  if (ref_row == nullptr || row == nullptr) {
+    assert(ref_row == nullptr && row == nullptr);
+    return;
+  }
   assert(ref_row != NULL && row != NULL);
   { // assume one row
     unsigned long *ref_lengths = mysql_fetch_lengths(ref_res);
