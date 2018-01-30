@@ -48,6 +48,7 @@ atomic<long> total_elapse = { 0 };
 size_t thread_cnt = 32;
 size_t table_cnt = 100;
 size_t row_cnt = 1;
+std::vector<size_t> cycle_item = {0, 1, 2};
 int    test_type = 2; // kQuery as default
 
 enum test_type_t {
@@ -147,6 +148,29 @@ void Init(const string& inpath) {
 	test_type = atoi(pt_type);
     }
     assert(0 < test_type && test_type < 7);
+  }
+  {
+    char* q_type = getenv("queryType");
+    if (q_type) {
+      int q_len = strlen(q_type);
+      std::vector<size_t> new_cycle_item;
+      for (int i = 0; i < q_len; ++i) {
+        switch (q_type[i]) {
+        case 'p': case 'P':
+          new_cycle_item.push_back(0);
+          break;
+        case 'i': case 'I':
+          new_cycle_item.push_back(1);
+          break;
+        case 'r': case 'R':
+          new_cycle_item.push_back(2);
+          break;
+        }
+      }
+      if (!new_cycle_item.empty()) {
+        new_cycle_item.swap(cycle_item);
+      }
+    }
   }
 
   srand (time(NULL));
@@ -324,28 +348,39 @@ void execute_query(int tid) {
     if (idx == 0)
       idx = 1;
     string table = TablePrefix + to_string(idx);
-    if (cycle == 0) {
-      string str_stmt = "select * from " + table +
+    string str_stmt;
+    switch (cycle_item[cycle]) {
+    case 0:
+      str_stmt = "select * from " + table +
 	" where L_ORDERKEY = ? and L_PARTKEY = ?";
       QueryExecute(client, str_stmt, kOrderKey, kPartKey);
-    } else if (cycle == 1) {
-      string str_stmt = "select * from " + table +
+      break;
+    case 1:
+      str_stmt = "select * from " + table +
 	" where L_SUPPKEY = ? and L_PARTKEY = ?";
       QueryExecute(client, str_stmt, kSuppKey, kPartKey);
-    } else if (cycle == 2) {
-      string str_stmt = "select * from " + table +
-      " where L_PARTKEY > ? limit 1";
-      QueryExecute(client, str_stmt, kPartKey, -1);
-    } else if (cycle == 3) {
-      string str_stmt = "select * from " + table +
-	" where L_PARTKEY < ? limit 1";
-      QueryExecute(client, str_stmt, kPartKey, -1);
-    } else if (cycle == 4) {
-      string str_stmt = "select * from " + table +
-	" where L_SUPPKEY < ? limit 1";
-      QueryExecute(client, str_stmt, kSuppKey, -1);
+      break;
+    case 2:
+      switch (mt() % 3) {
+      case 0:
+        str_stmt = "select * from " + table +
+          " where L_PARTKEY > ? limit 1";
+        QueryExecute(client, str_stmt, kPartKey, -1);
+        break;
+      case 1:
+        str_stmt = "select * from " + table +
+          " where L_PARTKEY < ? limit 1";
+        QueryExecute(client, str_stmt, kPartKey, -1);
+        break;
+      case 2:
+        str_stmt = "select * from " + table +
+          " where L_SUPPKEY < ? limit 1";
+        QueryExecute(client, str_stmt, kSuppKey, -1);
+        break;
+      }
+      break;
     }
-    cycle = (cycle + 1) % 5;
+    cycle = (cycle + 1) % cycle_item.size();
     total_counts += row_cnt;
     total_rounds++;
     high_resolution_clock::time_point end = high_resolution_clock::now();
@@ -363,6 +398,7 @@ void execute_query(int tid) {
 }
 
 void execute_query_prepared(int tid) {
+  std::mt19937_64 mt(tid);
   Mysql client;
   if (!client.connect()) {
     printf("Query(): conn failed\n");
@@ -373,20 +409,29 @@ void execute_query_prepared(int tid) {
   int cycle = 0;
   while (true) {
     high_resolution_clock::time_point start = high_resolution_clock::now();
-    int idx = rand() % table_cnt;
-    MYSQL_STMT* stmt = stmts[(query_t)cycle][idx];
-    if (cycle == 0) {
-      QueryExecutePrepared(client, stmt, kOrderKey, kPartKey);
-    } else if (cycle == 1) {
-      QueryExecutePrepared(client, stmt, kSuppKey, kPartKey);
-    } else if (cycle == 2) {
-      QueryExecutePrepared(client, stmt, kPartKey, -1);
-    } else if (cycle == 3) {
-      QueryExecutePrepared(client, stmt, kPartKey, -1);
-    } else if (cycle == 4) {
-      QueryExecutePrepared(client, stmt, kSuppKey, -1);
+    int idx = mt() % table_cnt;
+    switch (cycle_item[cycle]) {
+    case 0:
+      QueryExecutePrepared(client, stmts[0][idx], kOrderKey, kPartKey);
+      break;
+    case 1:
+      QueryExecutePrepared(client, stmts[1][idx], kSuppKey, kPartKey);
+      break;
+    case 2:
+      switch (2 + mt() % 3) {
+      case 2:
+        QueryExecutePrepared(client, stmts[2][idx], kPartKey, -1);
+        break;
+      case 3:
+        QueryExecutePrepared(client, stmts[3][idx], kPartKey, -1);
+        break;
+      case 4:
+        QueryExecutePrepared(client, stmts[4][idx], kSuppKey, -1);
+        break;
+      }
+      break;
     }
-    cycle = (cycle + 1) % 5;
+    cycle = (cycle + 1) % cycle_item.size();
     total_counts += row_cnt;
     total_rounds++;
     high_resolution_clock::time_point end = high_resolution_clock::now();
