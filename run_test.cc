@@ -57,7 +57,7 @@ enum test_type_t {
   kQueryPreparedTest,
   kInsertRandomTest  = 4,
   kUpdateRandomTest,
-  kPrepare
+  kPrepareTable
 };
 
 enum op_type_t {
@@ -141,8 +141,8 @@ void Init(const string& inpath) {
 	test_type = kInsertRandomTest;
       else if (pt_type == std::string("Update"))
 	test_type = kUpdateRandomTest;
-      else if (pt_type == std::string("Prepare"))
-	test_type = kPrepare;
+      else if (pt_type == std::string("PrepareTable"))
+	test_type = kPrepareTable;
       else
 	test_type = atoi(pt_type);
     }
@@ -405,7 +405,7 @@ void execute_query_prepared(int tid) {
 
 
 void StartStress() {
-  if (test_type == kPrepare) {
+  if (test_type == kPrepareTable) {
     execute_prepare();
     return;
   }
