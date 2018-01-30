@@ -73,7 +73,9 @@ enum op_type_t {
 enum query_t {
   kOrder_Part = 0,
   kSupp_Part,
-  kOrder
+  kPart_Larger,
+  kPart_Smaller,
+  kSupp_Smaller
 };
 typedef map<int, vector<MYSQL_STMT*>> I2PreparedStmts;
 typedef map<int, string> I2StrStmt;
@@ -128,8 +130,22 @@ void Init(const string& inpath) {
   }
   {
     char* pt_type = getenv("testType");
-    if (pt_type)
-      test_type = atoi(pt_type);
+    if (pt_type) {
+      if (pt_type == std::string("InsertBulk"))
+	test_type = kInsertBulkTest;
+      else if (pt_type == std::string("Query"))
+	test_type = kQueryTest;
+      else if (pt_type == std::string("QueryPrepared"))
+	test_type = kQueryPreparedTest;
+      else if (pt_type == std::string("Insert"))
+	test_type = kInsertRandomTest;
+      else if (pt_type == std::string("Update"))
+	test_type = kUpdateRandomTest;
+      else if (pt_type == std::string("Prepare"))
+	test_type = kPrepare;
+      else
+	test_type = atoi(pt_type);
+    }
     assert(0 < test_type && test_type < 7);
   }
 
@@ -197,45 +213,23 @@ void prepare_stmts(Mysql& client, I2PreparedStmts& pStmts) {
     }
     {
       string str_stmt = "select * from " + table +
-	" where L_ORDERKEY = ?";
+	" where L_PARTKEY > ? limit 1";
       MYSQL_STMT* stmt = client.prepare(str_stmt);
-      pStmts[kOrder].push_back(stmt);
+      pStmts[kPart_Larger].push_back(stmt);
+    }
+    {
+      string str_stmt = "select * from " + table +
+	" where L_PARTKEY < ? limit 1";
+      MYSQL_STMT* stmt = client.prepare(str_stmt);
+      pStmts[kPart_Smaller].push_back(stmt);
+    }
+    {
+      string str_stmt = "select * from " + table +
+	" where L_SUPPKEY < ? limit 1";
+      MYSQL_STMT* stmt = client.prepare(str_stmt);
+      pStmts[kSupp_Smaller].push_back(stmt);
     }
   }
-}
-
-MYSQL_STMT* gen_stmt(Mysql& client, query_t sel) {
-  int idx = rand() % table_cnt + 1;
-  string table = TablePrefix + to_string(idx);
-  string str_stmt;
-  switch (sel) {
-  case kOrder_Part:
-    return 0;
-  case kSupp_Part:
-    return 0;
-  case kOrder:
-    return 0;
-    /*
-  case 4:
-    printf("will query orderkey > and partkey < \n");
-    str_stmt = "select * from " + table +
-      " where L_ORDERKEY > ? and L_PARTKEY < ?";
-    return client.prepare(str_stmt);
-  case 5:
-    printf("will query orderkey < \n");
-    str_stmt = "select * from " + table +
-      " where L_ORDERKEY > ?";
-    return client.prepare(str_stmt);
-  case 6:
-    printf("will query orderkey < and partkey > \n");
-    str_stmt = "select * from " + table +
-      " where L_ORDERKEY < ? and L_PARTKEY > ?";
-    return client.prepare(str_stmt);
-    */
-  default:
-    break;
-  }
-  return 0;
 }
 
 void execute_prepare() {
@@ -386,9 +380,13 @@ void execute_query_prepared(int tid) {
     } else if (cycle == 1) {
       QueryExecutePrepared(client, stmt, kSuppKey, kPartKey);
     } else if (cycle == 2) {
-      QueryExecutePrepared(client, stmt, kOrderKey, -1);
+      QueryExecutePrepared(client, stmt, kPartKey, -1);
+    } else if (cycle == 3) {
+      QueryExecutePrepared(client, stmt, kPartKey, -1);
+    } else if (cycle == 4) {
+      QueryExecutePrepared(client, stmt, kSuppKey, -1);
     }
-    cycle = (cycle + 1) % 3;
+    cycle = (cycle + 1) % 5;
     total_counts += row_cnt;
     total_rounds++;
     high_resolution_clock::time_point end = high_resolution_clock::now();
@@ -810,10 +808,7 @@ void QueryExecute(Mysql& client, const std::string& str_in, int idx1, int idx2) 
       replace_with(str_stmt, "?", results[idx1]);
       client.execute(str_stmt);
     }
-    // consume data
     client.consume_data(results);
-    //MYSQL_RES *res = client.use_result();
-    //client.free_result(res);
   }
 }
 
@@ -843,5 +838,4 @@ void QueryExecutePrepared(Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2) {
     }
     client.consume_data(stmt);
   }
-  //client.release_stmt(stmt);
 }
