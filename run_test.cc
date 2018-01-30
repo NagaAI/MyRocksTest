@@ -1,4 +1,5 @@
 
+#include <sys/time.h>
 #include <time.h>
 #include <ctime>
 #include <ratio>
@@ -412,6 +413,7 @@ void StartStress() {
   }
 
   std::vector<std::thread> threads;
+  std::string testName;
   // Launoch a group of threads
   for (size_t i = 0; i < thread_cnt; ++i) {
     switch (test_type) {
@@ -419,25 +421,26 @@ void StartStress() {
       threads.push_back(std::thread(execute, i));
       break;
     case kInsertBulkTest:
+      testName = "[InsertBulk] TPS";
       threads.push_back(std::thread(execute_insert, i));
       break;
     case kQueryTest:
+      testName = "[Query] QPS";
       threads.push_back(std::thread(execute_query, i));
       break;
     case kQueryPreparedTest:
+      testName = "[QueryPrepared] QPS";
       threads.push_back(std::thread(execute_query_prepared, i));
       break;
     case kInsertRandomTest:
+      testName = "[InsertRandom] TPS";
       threads.push_back(std::thread(execute_insert, i));
       break;
     case kUpdateRandomTest:
+      testName = "[UpdateRandom] TPS";
       threads.push_back(std::thread(execute_update, i));
       break;
     }
-    
-    //threads.push_back(std::thread(execute_query_prepared, i));
-    //
-    
     printf("thread %d start. \n", i);
   }
 
@@ -808,7 +811,7 @@ void QueryExecute(Mysql& client, const std::string& str_in, int idx1, int idx2) 
       client.execute(str_stmt);
     }
     // consume data
-    client.consume_data();
+    client.consume_data(results);
     //MYSQL_RES *res = client.use_result();
     //client.free_result(res);
   }

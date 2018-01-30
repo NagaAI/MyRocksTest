@@ -115,14 +115,22 @@ void Mysql::consume_data(MYSQL_STMT* stmt) {
     ;
 }
 
-void Mysql::consume_data() {
+void Mysql::consume_data(std::vector<std::string>& inputs) {
   MYSQL_RES* result = mysql_store_result(conn_);
-  MYSQL_ROW row;
-  while( ( row = mysql_fetch_row(result)) != NULL ) {
-    //printf("id: %s, val: %s\n", 
-    //	   (row[0] ? row[0] : "NULL"), 
-    //	   (row[1] ? row[1] : "NULL"));
-  }
+  /*MYSQL_ROW row;
+  unsigned int num_fields = mysql_num_fields(result);
+  while ( (row = mysql_fetch_row(result)) != NULL ) {
+    unsigned long *lengths;
+    lengths = mysql_fetch_lengths(result);
+    for (int i = 0; i < num_fields; i++) {
+      std::string str(row[i], lengths[i]);
+      if (row[i] != str) {
+	printf("expected: [%s], actual [%.*s] ", inputs[i].c_str(), 
+	       (int) lengths[i], row[i] ? row[i] : "NULL");
+      }
+    }
+    printf("\n");
+    }*/
   /* free the result set */
   mysql_free_result(result);
 }
