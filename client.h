@@ -28,10 +28,12 @@ public:
   }
 
  Mysql(const std::string& port_name) {
-   char* cport = getenv(port_name.c_str());
-   assert(cport != nullptr);
-   port_ = atoi(cport);
-   assert(port_ < 70000);
+    host_ = "127.0.0.1";
+    db_ = "tpch";
+    char* cport = getenv(port_name.c_str());
+    assert(cport != nullptr);
+    port_ = atoi(cport);
+    assert(port_ < 70000);
  }
   /*Mysql(const char *_host, const char *_user, const char *_passwd, const char *_db, const unsigned int &_port)
       : host(_host), user(_user), passwd(_passwd), db(_db), port(_port) {

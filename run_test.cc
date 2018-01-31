@@ -130,7 +130,94 @@ MYSQL_RES* QueryExecuteAndReturn(Context&, Mysql& client, const std::string& str
 				 int offset, int idx1, int idx2);
 void AlterExecute(Context&, Mysql& client, const std::string& stmt);
 
+class RandomIndex {
+public:
+  RandomIndex(size_t _N) {
+    N = _N;
+    random_device rd;
+    std::mt19937_64 mt(rd());
+    i = mt() % N;
+    c = 0;
+    mod = get_prime(mt() & 0xFFFFFFFFFFFFULL + 5 * N);
+  }
+  bool eof() const {
+    return c == N;
+  }
+  void next() {
+    i += mod;
+    i %= N;
+    ++c;
+  }
+  size_t get() const {
+    return i;
+  }
+  
+private:
+  bool is_prime(size_t candidate) {
+    if((candidate & 1) != 0) {
+      size_t limit = size_t(std::sqrt(candidate));
+      for(size_t divisor = 3; divisor <= limit; divisor += 2) {
+        if((candidate % divisor) == 0) {
+            return false;
+        }
+      }
+      return true;
+    }
+    return (candidate == 2);
+  }
+
+  size_t get_prime(size_t size) {
+    static size_t const prime_array[] =
+    {
+        7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431, 521, 631, 761, 919,
+        1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839, 7013, 8419, 10103, 12143, 14591,
+        17519, 21023, 25229, 30293, 36353, 43627, 52361, 62851, 75431, 90523, 108631, 130363, 156437,
+        187751, 225307, 270371, 324449, 389357, 467237, 560689, 672827, 807403, 968897, 1162687, 1395263,
+        1674319, 2009191, 2411033, 2893249, 3471899, 4166287, 4999559, 5999471, 7199369
+    };
+    for(auto prime : prime_array) {
+        if(prime >= size) {
+            return prime;
+        }
+    }
+    for(size_t prime = (size | 1); prime < std::numeric_limits<uint32_t>::max(); prime += 2) {
+        if(is_prime(prime) && ((prime - 1) % 101 != 0)) {
+            return prime;
+        }
+    }
+    return size;
+  }
+  size_t i;
+  size_t c;
+  size_t N;
+  size_t mod;
+};
+
 void Init(const string& inpath) {
+/*
+  std::vector<uint32_t> v;
+  std::vector<uint32_t> v2;
+  for (uint32_t i = 0; i < 2000000; ++i) {
+    v2.push_back(i);
+  }
+  for (int t = 0; t < 200; ++t) {
+    for (RandomIndex ri(2000000); !ri.eof(); ri.next()) {
+      v.push_back(ri.get());
+    }
+    for (uint32_t i = 0; i < 20; ++i) {
+      fprintf(stderr, "%d,", v[i]);
+    }
+    fprintf(stderr, "\n");
+    std::sort(v.begin(), v.end());
+    if (v != v2) {
+      fprintf(stderr, "mismatch !\n");
+      for (uint32_t i = 0; i < 20; ++i) {
+        fprintf(stderr, "%d,", v[i]);
+      }
+    }
+    v.clear();
+  }
+*/
   {
     char* pth_cnt = getenv("threadCount");
     if (pth_cnt)
@@ -158,6 +245,8 @@ void Init(const string& inpath) {
 	test_type = kUpdateRandomTest;
       else if (pt_type == std::string("PrepareTable"))
 	test_type = kPrepareTable;
+      else if (pt_type == std::string("Verify"))
+	test_type = kVerifyData;
       else
 	test_type = atoi(pt_type);
     }
@@ -466,7 +555,8 @@ void execute_query_prepared(int tid) {
   }
 }
 
-void execute_query_verify(Context& context, int tid) {
+void execute_query_verify(int tid) {
+  Context context;
   Mysql client("port");
   if (!client.connect()) {
     printf("Query(): conn failed\n");
@@ -487,28 +577,28 @@ void execute_query_verify(Context& context, int tid) {
     if (cycle == 0) {
       string str_stmt = "select * from " + table +
 	" where L_ORDERKEY = ? and L_PARTKEY = ?";
-      res = QueryExecuteAndReturn(context, client, str_stmt, offset, kOrderKey, kPartKey);
+      res     = QueryExecuteAndReturn(context,     client, str_stmt, offset, kOrderKey, kPartKey);
       ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kOrderKey, kPartKey);
     } else if (cycle == 1) {
       string str_stmt = "select * from " + table +
-	" where L_SUPPKEY = ? and L_PARTKEY = ?";
-      res = QueryExecuteAndReturn(context,client, str_stmt, offset, kSuppKey, kPartKey);
-      ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kOrderKey, kPartKey);
+	" where L_SUPPKEY = ? and L_PARTKEY = ? order by L_ORDERKEY, L_PARTKEY limit 1";
+      res     = QueryExecuteAndReturn(context,     client, str_stmt, offset, kSuppKey, kPartKey);
+      ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kSuppKey, kPartKey);
     } else if (cycle == 2) {
       string str_stmt = "select * from " + table +
-      " where L_PARTKEY > ? limit 1";
-      res = QueryExecuteAndReturn(context,client, str_stmt, offset, kPartKey, -1);
-      ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kOrderKey, kPartKey);
+        " where L_PARTKEY > ? order by L_ORDERKEY, L_PARTKEY limit 1";
+      res     = QueryExecuteAndReturn(context,     client, str_stmt, offset, kPartKey, -1);
+      ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kPartKey, -1);
     } else if (cycle == 3) {
       string str_stmt = "select * from " + table +
-	" where L_PARTKEY < ? limit 1";
-      res = QueryExecuteAndReturn(context,client, str_stmt, offset, kPartKey, -1);
-      ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kOrderKey, kPartKey);
+	" where L_PARTKEY < ? order by L_ORDERKEY, L_PARTKEY limit 1";
+      res     = QueryExecuteAndReturn(context,     client, str_stmt, offset, kPartKey, -1);
+      ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kPartKey, -1);
     } else if (cycle == 4) {
       string str_stmt = "select * from " + table +
-	" where L_SUPPKEY < ? limit 1";
-      res = QueryExecuteAndReturn(context,client, str_stmt, offset, kSuppKey, -1);
-      ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kOrderKey, kPartKey);
+	" where L_SUPPKEY < ?  order by L_ORDERKEY, L_PARTKEY limit 1";
+      res     = QueryExecuteAndReturn(context,     client, str_stmt, offset, kSuppKey, -1);
+      ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kSuppKey, -1);
     }
     Mysql::verify_data(res, ref_res);
     client.free_result(res);
@@ -552,6 +642,10 @@ void StartStress() {
     case kUpdateRandomTest:
       testName = "[UpdateRandom] TPS";
       threads.push_back(std::thread(execute_update, i));
+      break;
+    case kVerifyData:
+      testName = "[VerifyData] TPS";
+      threads.push_back(std::thread(execute_query_verify, i));
       break;
     }
     printf("thread %d start. \n", i);
