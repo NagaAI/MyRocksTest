@@ -50,11 +50,53 @@ atomic<long> total_elapse = { 0 };
 //atomic<high_resolution_clock::time_point> total_elapse = ;
 //time_t start_tm = time(0);
 
+enum field_t {
+  kOrderKey = 0,
+  kPartKey,
+  kSuppKey,
+  kLineNumber,
+  kQuantity = 4,
+  kExtendedPrice,
+  kDiscount,
+  kTax,
+  kReturnFlag,
+  kLineStatus = 9,
+  kShipDate,
+  kCommitDate,
+  kRecepitDate,
+  kShipinStruct,
+  kShipMode = 14,
+  kComment
+};
+
 size_t thread_cnt = 32;
 size_t table_cnt = 100;
 size_t row_cnt = 1;
-std::vector<size_t> cycle_item = {0, 1, 2};
-int    test_type = 2; // kQuery as default
+struct SqlItem {
+  std::string sql;
+  int idx1, inx2;
+};
+std::vector<std::vector<std::string>> sqls = {
+  {
+    { "select * from ? where L_ORDERKEY = ? and L_PARTKEY = ?;", kOrderKey, kPartKey },
+  }, {
+    { "select * from ? where L_PARTKEY = ? limit 1;", kPartKey, -1 },
+    { "select * from ? where L_SUPPKEY = ? limit 1;", kSuppKey, -1 },
+  }, {
+    { "select * from ? where L_PARTKEY < ? limit 1;", kPartKey, -1 },
+    { "select * from ? where L_PARTKEY <= ? limit 1;", kPartKey, -1 },
+    { "select * from ? where L_SUPPKEY >= ? limit 1;", kSuppKey, -1 },
+    { "select * from ? where L_SUPPKEY < ? limit 1;", kSuppKey, -1 },
+  }
+};
+enum query_type_t {
+  kPrimary = 0,
+  kSecondary,
+  kSecondaryRange
+};
+std::vector<size_t> cycle_item = {kPrimary, kSecondary, kSecondaryRange};
+
+int test_type = 2; // kQuery as default
 
 enum test_type_t {
   kStressTest        = 0,
@@ -84,33 +126,8 @@ enum query_t {
   kPart_Smaller,
   kSupp_Smaller
 };
-enum query_type_t {
-  kPrimary = 0,
-  kSecondary,
-  kSecondaryRange
-};
 
-typedef map<int, vector<MYSQL_STMT*>> I2PreparedStmts;
-typedef map<int, string> I2StrStmt;
-
-enum field_t {
-  kOrderKey = 0,
-  kPartKey,
-  kSuppKey,
-  kLineNumber,
-  kQuantity = 4,
-  kExtendedPrice,
-  kDiscount,
-  kTax,
-  kReturnFlag,
-  kLineStatus = 9,
-  kShipDate,
-  kCommitDate,
-  kRecepitDate,
-  kShipinStruct,
-  kShipMode = 14,
-  kComment
-};
+typedef vector<vector<vector<MYSQL_STMT*>>> I2PreparedStmts;
 
 //string TablePrefix = "terark_";
 string TablePrefix = "lineitem";
@@ -326,37 +343,21 @@ void execute(int tid) {
 }
 
 void prepare_stmts(Mysql& client, I2PreparedStmts& pStmts) {
+  pStmts.resize(table_cnt);
   for (int idx = 0; idx < table_cnt; idx++) {
-    string table = TablePrefix + to_string(idx);
-    {
-      string str_stmt = "select * from " + table +
-        " where L_ORDERKEY = ? and L_PARTKEY = ?";
-      MYSQL_STMT* stmt = client.prepare(str_stmt);
-      pStmts[kOrder_Part].push_back(stmt);
-    }
-    {
-      string str_stmt = "select * from " + table +
-        " where L_SUPPKEY = ? and L_PARTKEY = ?";
-      MYSQL_STMT* stmt = client.prepare(str_stmt);
-      pStmts[kSupp_Part].push_back(stmt);
-    }
-    {
-      string str_stmt = "select * from " + table +
-        " where L_PARTKEY > ? limit 1";
-      MYSQL_STMT* stmt = client.prepare(str_stmt);
-      pStmts[kPart_Larger].push_back(stmt);
-    }
-    {
-      string str_stmt = "select * from " + table +
-        " where L_PARTKEY < ? limit 1";
-      MYSQL_STMT* stmt = client.prepare(str_stmt);
-      pStmts[kPart_Smaller].push_back(stmt);
-    }
-    {
-      string str_stmt = "select * from " + table +
-        " where L_SUPPKEY < ? limit 1";
-      MYSQL_STMT* stmt = client.prepare(str_stmt);
-      pStmts[kSupp_Smaller].push_back(stmt);
+    pStmts[idx].resize(3);
+  }
+  for (size_t query_type = 0; query_type < 3; ++query_type) {
+    if (std::find(cycle_item.begin(), cycle_item.end(), query_type) == cycle_item.end())
+      continue;
+    auto &vec = sqls[query_type];
+    for (auto& item : vec) {
+      for (int idx = 0; idx < table_cnt; idx++) {
+        string table = TablePrefix + to_string(idx);
+        string str_stmt = item.sql;
+        replace_with(str_stmt, "?", table);
+        pStmts[idx][query_type].push_back(client.prepare(str_stmt));
+      }
     }
   }
 }
@@ -478,45 +479,18 @@ void execute_query(int tid) {
   }
   int cycle = 0;
   while (true) {
-    high_resolution_clock::time_point start = high_resolution_clock::now();
     int idx = context.mt() % table_cnt;
     string table = TablePrefix + to_string(idx);
-    string str_stmt;
-    switch (cycle_item[cycle]) {
-    case query_type_t::kPrimary:
-      str_stmt = "select * from " + table +
-        " where L_ORDERKEY = ? and L_PARTKEY = ?";
-      QueryExecute(context, client, str_stmt, kOrderKey, kPartKey);
-      break;
-    case query_type_t::kSecondary:
-      str_stmt = "select * from " + table +
-        " where L_SUPPKEY = ? and L_PARTKEY = ?";
-      QueryExecute(context, client, str_stmt, kSuppKey, kPartKey);
-      break;
-    case query_type_t::kSecondaryRange:
-      switch (context.mt() % 3) {
-      case 0:
-        str_stmt = "select * from " + table +
-          " where L_PARTKEY > ? limit 1";
-        QueryExecute(context, client, str_stmt, kPartKey, -1);
-        break;
-      case 1:
-        str_stmt = "select * from " + table +
-          " where L_PARTKEY < ? limit 1";
-        QueryExecute(context, client, str_stmt, kPartKey, -1);
-        break;
-      case 2:
-        str_stmt = "select * from " + table +
-          " where L_SUPPKEY < ? limit 1";
-        QueryExecute(context, client, str_stmt, kSuppKey, -1);
-        break;
-      }
-      break;
-    }
+    auto& sql_vec = sqls[cycle_item[cycle]];
+    auto& sql_item = sql_vec[context.mt() % sql_vec.size()];
+    string str_stmt = sql_item.sql;
+    replace_with(str_stmt, "?", table);
+    high_resolution_clock::time_point start = high_resolution_clock::now();
+    QueryExecute(context, client, str_stmt, sql_item.idx1, sql_item.idx2);
+    high_resolution_clock::time_point end = high_resolution_clock::now();
     cycle = (cycle + 1) % cycle_item.size();
     total_counts += row_cnt;
     total_rounds++;
-    high_resolution_clock::time_point end = high_resolution_clock::now();
     duration<int,std::micro> time_span = duration_cast<duration<int,std::micro>>(end - start);
     total_elapse += time_span.count();
     if (total_rounds.load() % 30001 == 0) {
@@ -541,33 +515,16 @@ void execute_query_prepared(int tid) {
   prepare_stmts(client, stmts);
   int cycle = 0;
   while (true) {
+    auto query_type = cycle_item[cycle];
+    auto& sql_vec = sqls[query_type];
+    auto& sql_item = sql_vec[context.mt() % sql_vec.size()];
+    auto* stmt = stmts[idx][query_type];
     high_resolution_clock::time_point start = high_resolution_clock::now();
-    int idx = context.mt() % table_cnt;
-    switch (cycle_item[cycle]) {
-    case query_type_t::kPrimary:
-      QueryExecutePrepared(context, client, stmts[0][idx], kOrderKey, kPartKey);
-      break;
-    case query_type_t::kSecondary:
-      QueryExecutePrepared(context, client, stmts[1][idx], kSuppKey, kPartKey);
-      break;
-    case query_type_t::kSecondaryRange:
-      switch (2 + context.mt() % 3) {
-      case 2:
-        QueryExecutePrepared(context, client, stmts[2][idx], kPartKey, -1);
-        break;
-      case 3:
-        QueryExecutePrepared(context, client, stmts[3][idx], kPartKey, -1);
-        break;
-      case 4:
-        QueryExecutePrepared(context, client, stmts[4][idx], kSuppKey, -1);
-        break;
-      }
-      break;
-    }
+    QueryExecutePrepared(context, client, stmt, sql_item.idx1, sql_item.idx2);
+    high_resolution_clock::time_point end = high_resolution_clock::now();
     cycle = (cycle + 1) % cycle_item.size();
     total_counts += row_cnt;
     total_rounds++;
-    high_resolution_clock::time_point end = high_resolution_clock::now();
     duration<int,std::micro> time_span = duration_cast<duration<int,std::micro>>(end - start);
     total_elapse += time_span.count();
     if (total_rounds.load() % 30001 == 0) {
