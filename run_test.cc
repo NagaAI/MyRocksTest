@@ -50,7 +50,7 @@ atomic<long> total_elapse = { 0 };
 //atomic<high_resolution_clock::time_point> total_elapse = ;
 //time_t start_tm = time(0);
 
-enum field_t {
+enum field_t : int {
   kOrderKey = 0,
   kPartKey,
   kSuppKey,
@@ -74,9 +74,9 @@ size_t table_cnt = 100;
 size_t row_cnt = 1;
 struct SqlItem {
   std::string sql;
-  int idx1, inx2;
+  int idx1, idx2;
 };
-std::vector<std::vector<std::string>> sqls = {
+std::vector<std::vector<SqlItem>> sqls = {
   {
     { "select * from ? where L_ORDERKEY = ? and L_PARTKEY = ?;", kOrderKey, kPartKey },
   }, {
@@ -84,9 +84,9 @@ std::vector<std::vector<std::string>> sqls = {
     { "select * from ? where L_SUPPKEY = ? limit 1;", kSuppKey, -1 },
   }, {
     { "select * from ? where L_PARTKEY < ? limit 1;", kPartKey, -1 },
-    { "select * from ? where L_PARTKEY <= ? limit 1;", kPartKey, -1 },
-    { "select * from ? where L_SUPPKEY >= ? limit 1;", kSuppKey, -1 },
-    { "select * from ? where L_SUPPKEY < ? limit 1;", kSuppKey, -1 },
+    { "select * from ? where L_PARTKEY >= ? limit 1;", kPartKey, -1 },
+    { "select * from ? where L_SUPPKEY > ? limit 1;", kSuppKey, -1 },
+    { "select * from ? where L_SUPPKEY <= ? limit 1;", kSuppKey, -1 },
   }
 };
 enum query_type_t {
@@ -342,6 +342,14 @@ void execute(int tid) {
   }
 }
 
+void replace_with(string& str, const string& from, const string& to) {
+  size_t pos = str.find(from);
+  if (pos != string::npos) {
+    str.replace(pos, from.size(), to);
+    pos = str.find(from);
+  }
+}
+
 void prepare_stmts(Mysql& client, I2PreparedStmts& pStmts) {
   pStmts.resize(table_cnt);
   for (int idx = 0; idx < table_cnt; idx++) {
@@ -350,11 +358,11 @@ void prepare_stmts(Mysql& client, I2PreparedStmts& pStmts) {
   for (size_t query_type = 0; query_type < 3; ++query_type) {
     if (std::find(cycle_item.begin(), cycle_item.end(), query_type) == cycle_item.end())
       continue;
-    auto &vec = sqls[query_type];
-    for (auto& item : vec) {
+    auto &sql_vec = sqls[query_type];
+    for (auto& sql_item : sql_vec) {
       for (int idx = 0; idx < table_cnt; idx++) {
         string table = TablePrefix + to_string(idx);
-        string str_stmt = item.sql;
+        string str_stmt = sql_item.sql;
         replace_with(str_stmt, "?", table);
         pStmts[idx][query_type].push_back(client.prepare(str_stmt));
       }
@@ -515,10 +523,11 @@ void execute_query_prepared(int tid) {
   prepare_stmts(client, stmts);
   int cycle = 0;
   while (true) {
-    auto query_type = cycle_item[cycle];
+    size_t query_type = cycle_item[cycle];
     auto& sql_vec = sqls[query_type];
-    auto& sql_item = sql_vec[context.mt() % sql_vec.size()];
-    auto* stmt = stmts[idx][query_type];
+    size_t query_index = context.mt() % sql_vec.size();
+    auto& sql_item = sql_vec[query_index];
+    auto* stmt = stmts[context.mt() % table_cnt][query_type][query_index];
     high_resolution_clock::time_point start = high_resolution_clock::now();
     QueryExecutePrepared(context, client, stmt, sql_item.idx1, sql_item.idx2);
     high_resolution_clock::time_point end = high_resolution_clock::now();
@@ -968,13 +977,6 @@ void Query(Context& context) {
   printf("done Query table: %s%d\n", TablePrefix.c_str(), idx);
 }
 
-void replace_with(string& str, const string& from, const string& to) {
-  size_t pos = str.find(from);
-  while (pos != string::npos) {
-    str.replace(pos, from.size(), to);
-    pos = str.find(from);
-  }
-}
 void QueryExecute(Context& context, Mysql& client, const std::string& str_in, int idx1, int idx2) {
   int row_start = context.mt() % contents.size();
   int limit = min<size_t>(row_cnt, contents.size() - row_start + 1);
