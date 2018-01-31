@@ -134,7 +134,7 @@ class RandomIndex {
 public:
   void init(size_t _T, size_t _N) {
     N = _N;
-    T.reverse(_T);
+    T.reserve(_T);
     random_device rd;
     mt.seed(rd());
     for (size_t i = 0; i < _T; ++i) {
@@ -146,15 +146,15 @@ public:
       T.push_back(item);
     }
   }
-  void get(size_t count, std::vector<std::pair<int, int>>& vec) const {
+  void get(size_t count, std::vector<std::pair<int, int>>& vec) {
     vec.clear();
     std::unique_lock<std::mutex> l(M);
-    for (size_t i = 0; i < count && T.empty(); ++i) {
+    for (size_t i = 0; i < count && !T.empty(); ++i) {
       auto& item = T[mt() % T.size()];
-      item.i += mod;
+      vec.emplace_back(int(item.t), int(item.i));
+      item.i += item.mod;
       item.i %= N;
       ++item.c;
-      vec.emplace_back(int(item.t), int(item.i));
       if (item.c == N) {
         item = T.back();
         T.pop_back();
@@ -177,8 +177,7 @@ private:
   }
 
   size_t get_prime(size_t size) {
-    static size_t const prime_array[] =
-    {
+    static size_t const prime_array[] = {
         7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431, 521, 631, 761, 919,
         1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839, 7013, 8419, 10103, 12143, 14591,
         17519, 21023, 25229, 30293, 36353, 43627, 52361, 62851, 75431, 90523, 108631, 130363, 156437,
@@ -202,7 +201,7 @@ private:
     size_t i;
     size_t c;
     size_t mod;
-  }
+  };
   size_t N;
   std::vector<Item> T;
   std::mt19937_64 mt;
@@ -287,13 +286,15 @@ void Init(const string& inpath) {
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::shuffle(contents.begin(), contents.end(), std::default_random_engine(seed));
   }
+  if (test_type == kInsertRandomTest) {
+    random_index.init(table_cnt, contents.size());
+  }
   if (test_type == kVerifyData) {
     char* cport = getenv("ref_port");
     if (!cport) {
       printf("make sure you'v provide both 'port' and 'ref_port'\n");
       exit(-1);
     }
-    random_index.init(table_cnt, contents.size());
   }
 }
 
@@ -439,17 +440,17 @@ void execute_insert_random(int thread_idx) {
     printf("ExecuteInsert(): conn failed\n");
     return;
   }
-  int round_cnt = 100, tick = 200;
+  int round_cnt = 1, tick = 20000;
   size_t bulk = 10000;
   string test_t = "[InsertRandom] ";
-  std::vector<std::pair<size_t, size_t>> vec;
+  std::vector<std::pair<int, int>> vec;
   while (true) {
     random_index.get(bulk, vec);
     if (vec.empty())
       break;
     for (auto pair : vec) {
-      size_t table_idx = pair.first;
-      size_t offset = pair.second;
+      int table_idx = pair.first;
+      int offset = pair.second;
       high_resolution_clock::time_point start = high_resolution_clock::now();
       InsertBulk(context, client, table_idx, offset, round_cnt);
       high_resolution_clock::time_point end = high_resolution_clock::now();
