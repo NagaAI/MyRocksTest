@@ -121,29 +121,39 @@ void Update(Context&, Mysql& client, int table_idx, int offset, int round_cnt);
 void QueryExecute(Context&, Mysql& client, const std::string& str_in, int idx1, int idx2);
 void QueryExecutePrepared(Context&, Mysql& client, MYSQL_STMT* stmt, int idx1, int idx2);
 MYSQL_RES* QueryExecuteAndReturn(Context&, Mysql& client, const std::string& str_in, 
-				 int offset, int idx1, int idx2);
+                                 int offset, int idx1, int idx2);
 void AlterExecute(Context&, Mysql& client, const std::string& stmt);
 
 class RandomIndex {
 public:
-  RandomIndex(size_t _N) {
+  void init(size_t _T, size_t _N) {
     N = _N;
+    T.reverse(_T);
     random_device rd;
-    std::mt19937_64 mt(rd());
-    i = mt() % N;
-    c = 0;
-    mod = get_prime(mt() & 0xFFFFFFFFFFFFULL + 5 * N);
+    mt.seed(rd());
+    for (size_t i = 0; i < _T; ++i) {
+      Item item;
+      item.t = i;
+      item.i = mt() % N;
+      item.c = 0;
+      item.mod = get_prime(mt() & 0xFFFFFFFFFFFFULL + 5 * N);
+      T.push_back(item);
+    }
   }
-  bool eof() const {
-    return c == N;
-  }
-  void next() {
-    i += mod;
-    i %= N;
-    ++c;
-  }
-  size_t get() const {
-    return i;
+  void get(size_t count, std::vector<std::pair<int, int>>& vec) const {
+    vec.clear();
+    std::unique_lock<std::mutex> l(M);
+    for (size_t i = 0; i < count && T.empty(); ++i) {
+      auto& item = T[mt() % T.size()];
+      item.i += mod;
+      item.i %= N;
+      ++item.c;
+      vec.emplace_back(int(item.t), int(item.i));
+      if (item.c == N) {
+        item = T.back();
+        T.pop_back();
+      }
+    }
   }
   
 private:
@@ -181,11 +191,17 @@ private:
     }
     return size;
   }
-  size_t i;
-  size_t c;
+  struct Item {
+    size_t t;
+    size_t i;
+    size_t c;
+    size_t mod;
+  }
   size_t N;
-  size_t mod;
-};
+  std::vector<Item> T;
+  std::mt19937_64 mt;
+  std::mutex M;
+} random_index;
 
 void Init(const string& inpath) {
   {
@@ -204,21 +220,21 @@ void Init(const string& inpath) {
     char* pt_type = getenv("testType");
     if (pt_type) {
       if (pt_type == std::string("InsertBulk"))
-	test_type = kInsertBulkTest;
+        test_type = kInsertBulkTest;
       else if (pt_type == std::string("Query"))
-	test_type = kQueryTest;
+        test_type = kQueryTest;
       else if (pt_type == std::string("QueryPrepared"))
-	test_type = kQueryPreparedTest;
+        test_type = kQueryPreparedTest;
       else if (pt_type == std::string("Insert"))
-	test_type = kInsertRandomTest;
+        test_type = kInsertRandomTest;
       else if (pt_type == std::string("Update"))
-	test_type = kUpdateRandomTest;
+        test_type = kUpdateRandomTest;
       else if (pt_type == std::string("PrepareTable"))
-	test_type = kPrepareTable;
+        test_type = kPrepareTable;
       else if (pt_type == std::string("Verify"))
-	test_type = kVerifyData;
+        test_type = kVerifyData;
       else
-	test_type = atoi(pt_type);
+        test_type = atoi(pt_type);
     }
     assert(0 < test_type && test_type < 8);
   }
@@ -271,6 +287,7 @@ void Init(const string& inpath) {
       printf("make sure you'v provide both 'port' and 'ref_port'\n");
       exit(-1);
     }
+    random_index.init(table_cnt, contents.size());
   }
 }
 
@@ -306,31 +323,31 @@ void prepare_stmts(Mysql& client, I2PreparedStmts& pStmts) {
     string table = TablePrefix + to_string(idx);
     {
       string str_stmt = "select * from " + table +
-	" where L_ORDERKEY = ? and L_PARTKEY = ?";
+        " where L_ORDERKEY = ? and L_PARTKEY = ?";
       MYSQL_STMT* stmt = client.prepare(str_stmt);
       pStmts[kOrder_Part].push_back(stmt);
     }
     {
       string str_stmt = "select * from " + table +
-	" where L_SUPPKEY = ? and L_PARTKEY = ?";
+        " where L_SUPPKEY = ? and L_PARTKEY = ?";
       MYSQL_STMT* stmt = client.prepare(str_stmt);
       pStmts[kSupp_Part].push_back(stmt);
     }
     {
       string str_stmt = "select * from " + table +
-	" where L_PARTKEY > ? limit 1";
+        " where L_PARTKEY > ? limit 1";
       MYSQL_STMT* stmt = client.prepare(str_stmt);
       pStmts[kPart_Larger].push_back(stmt);
     }
     {
       string str_stmt = "select * from " + table +
-	" where L_PARTKEY < ? limit 1";
+        " where L_PARTKEY < ? limit 1";
       MYSQL_STMT* stmt = client.prepare(str_stmt);
       pStmts[kPart_Smaller].push_back(stmt);
     }
     {
       string str_stmt = "select * from " + table +
-	" where L_SUPPKEY < ? limit 1";
+        " where L_SUPPKEY < ? limit 1";
       MYSQL_STMT* stmt = client.prepare(str_stmt);
       pStmts[kSupp_Smaller].push_back(stmt);
     }
@@ -368,8 +385,8 @@ void execute_update(int idx) {
     total_rounds ++;
     if (total_rounds.load() % tick == 0) {
       printf("== %s, TPS %f, insert %lld, time elapse %f sec\n", 
-	     test_t.c_str(), (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
-	     total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
+             test_t.c_str(), (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
+             total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
       total_counts = 0;
       total_elapse = 0;
       total_rounds = 0;
@@ -385,11 +402,7 @@ void execute_insert(int thread_idx) {
     return;
   }
   int round_cnt = 100, tick = 200;
-  string test_t;
-  if (test_type == kInsertBulkTest)
-    test_t = "[InsertBulk] ";
-  else if (test_type == kInsertRandomTest)
-    test_t = "[InsertRandom] ";
+  string test_t = "[InsertBulk] ";
   const int limit = table_cnt / thread_cnt;
   const int start_table = limit * thread_idx;
   for (int cnt = 0; cnt < limit; cnt++) { // skip table 0
@@ -402,12 +415,48 @@ void execute_insert(int thread_idx) {
       total_elapse += time_span.count();
       total_rounds ++;
       if (total_rounds.load() % tick == 0) {
-	printf("== %s, TPS %f, insert %lld, time elapse %f sec\n", 
-	       test_t.c_str(), (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
-	       total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
-	total_counts = 0;
-	total_elapse = 0;
-	total_rounds = 0;
+        printf("== %s, TPS %f, insert %lld, time elapse %f sec\n", 
+          test_t.c_str(), (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
+          total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
+        total_counts = 0;
+        total_elapse = 0;
+        total_rounds = 0;
+      }
+    }
+  }
+}
+
+void execute_insert_random(int thread_idx) {
+  Context context;
+  Mysql client;
+  if (!client.connect()) {
+    printf("ExecuteInsert(): conn failed\n");
+    return;
+  }
+  int round_cnt = 100, tick = 200;
+  size_t bulk = 10000;
+  string test_t = "[InsertRandom] ";
+  std::vector<std::pair<size_t, size_t>> vec;
+  while (true) {
+    random_index.get(bulk, vec);
+    if (vec.empty())
+      break;
+    for (auto pair : vec) {
+      size_t table_idx = pair.first;
+      size_t offset = pair.second;
+      high_resolution_clock::time_point start = high_resolution_clock::now();
+      InsertBulk(context, client, table_idx, offset, round_cnt);
+      high_resolution_clock::time_point end = high_resolution_clock::now();
+      duration<int,std::micro> time_span = duration_cast<duration<int,std::micro>>(end - start);
+      total_elapse += time_span.count();
+      total_rounds ++;
+      if (total_rounds.load() % tick == 0) {
+        printf("== %s, TPS %f, insert %lld, time elapse %f sec\n", 
+          test_t.c_str(), (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
+          total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
+        total_counts = 0;
+        total_elapse = 0;
+        total_rounds = 0;
       }
     }
   }
@@ -429,12 +478,12 @@ void execute_query(int tid) {
     switch (cycle_item[cycle]) {
     case 0:
       str_stmt = "select * from " + table +
-	" where L_ORDERKEY = ? and L_PARTKEY = ?";
+        " where L_ORDERKEY = ? and L_PARTKEY = ?";
       QueryExecute(context, client, str_stmt, kOrderKey, kPartKey);
       break;
     case 1:
       str_stmt = "select * from " + table +
-	" where L_SUPPKEY = ? and L_PARTKEY = ?";
+        " where L_SUPPKEY = ? and L_PARTKEY = ?";
       QueryExecute(context, client, str_stmt, kSuppKey, kPartKey);
       break;
     case 2:
@@ -465,8 +514,8 @@ void execute_query(int tid) {
     total_elapse += time_span.count();
     if (total_rounds.load() % 30001 == 0) {
       printf("== QPS %f, query %lld, time elapse %f sec\n", 
-	     (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
-	     total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
+             (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
+             total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
       total_rounds = 1;
       total_counts = 0;
       total_elapse = 0;
@@ -516,8 +565,8 @@ void execute_query_prepared(int tid) {
     total_elapse += time_span.count();
     if (total_rounds.load() % 30001 == 0) {
       printf("== QPS %f, query %lld, time elapse %f sec\n", 
-	     (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
-	     total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
+             (double)thread_cnt * total_counts.load() * 1e6 / total_elapse.load(), 
+             total_counts.load(), total_elapse.load() / 1e6 / thread_cnt);
       total_rounds = 1;
       total_counts = 0;
       total_elapse = 0;
@@ -546,12 +595,12 @@ void execute_query_verify(int tid) {
       *ref_res = nullptr;
     if (cycle == 0) {
       string str_stmt = "select * from " + table +
-	" where L_ORDERKEY = ? and L_PARTKEY = ?";
+        " where L_ORDERKEY = ? and L_PARTKEY = ?";
       res     = QueryExecuteAndReturn(context,     client, str_stmt, offset, kOrderKey, kPartKey);
       ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kOrderKey, kPartKey);
     } else if (cycle == 1) {
       string str_stmt = "select * from " + table +
-	" where L_SUPPKEY = ? and L_PARTKEY = ? order by L_ORDERKEY, L_PARTKEY limit 1";
+        " where L_SUPPKEY = ? and L_PARTKEY = ? order by L_ORDERKEY, L_PARTKEY limit 1";
       res     = QueryExecuteAndReturn(context,     client, str_stmt, offset, kSuppKey, kPartKey);
       ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kSuppKey, kPartKey);
     } else if (cycle == 2) {
@@ -561,12 +610,12 @@ void execute_query_verify(int tid) {
       ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kPartKey, -1);
     } else if (cycle == 3) {
       string str_stmt = "select * from " + table +
-	" where L_PARTKEY < ? order by L_ORDERKEY, L_PARTKEY limit 1";
+        " where L_PARTKEY < ? order by L_ORDERKEY, L_PARTKEY limit 1";
       res     = QueryExecuteAndReturn(context,     client, str_stmt, offset, kPartKey, -1);
       ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kPartKey, -1);
     } else if (cycle == 4) {
       string str_stmt = "select * from " + table +
-	" where L_SUPPKEY < ?  order by L_ORDERKEY, L_PARTKEY limit 1";
+        " where L_SUPPKEY < ?  order by L_ORDERKEY, L_PARTKEY limit 1";
       res     = QueryExecuteAndReturn(context,     client, str_stmt, offset, kSuppKey, -1);
       ref_res = QueryExecuteAndReturn(context, ref_client, str_stmt, offset, kSuppKey, -1);
     }
@@ -607,7 +656,7 @@ void StartStress() {
       break;
     case kInsertRandomTest:
       testName = "[InsertRandom] TPS";
-      threads.push_back(std::thread(execute_insert, i));
+      threads.push_back(std::thread(execute_insert_random, i));
       break;
     case kUpdateRandomTest:
       testName = "[UpdateRandom] TPS";
@@ -840,22 +889,22 @@ void InsertBulk(Context& context, Mysql& client, int table_idx, int offset, int 
 
     stringstream sst;
     sst << "Insert into " << table << " values("
-	<< results[kOrderKey] << ", "
-	<< results[kPartKey] << ", "
-	<< results[kSuppKey] << ", "
-	<< results[kLineNumber] << ", "
-	<< results[kQuantity] << ", "
-	<< results[kExtendedPrice] << ", "
-	<< results[kDiscount] << ", "
-	<< results[kTax] << ", "
-	<< "'"  << results[kReturnFlag]   << "'"  << ", "
-	<< "'"  << results[kLineStatus]   << "'"  << ", "
-	<< "\"" << results[kShipDate] << "\"" << ", "
-      	<< "\"" << results[kCommitDate] << "\"" << ", "
-	<< "\"" << results[kRecepitDate] << "\"" << ", "
-	<< "\"" << results[kShipinStruct] << "\"" << ", "
-	<< "\"" << results[kShipMode]     << "\"" << ", "
-	<< "\"" << results[kComment]      << "\"" << ")";
+        << results[kOrderKey] << ", "
+        << results[kPartKey] << ", "
+        << results[kSuppKey] << ", "
+        << results[kLineNumber] << ", "
+        << results[kQuantity] << ", "
+        << results[kExtendedPrice] << ", "
+        << results[kDiscount] << ", "
+        << results[kTax] << ", "
+        << "'"  << results[kReturnFlag]   << "'"  << ", "
+        << "'"  << results[kLineStatus]   << "'"  << ", "
+        << "\"" << results[kShipDate] << "\"" << ", "
+              << "\"" << results[kCommitDate] << "\"" << ", "
+        << "\"" << results[kRecepitDate] << "\"" << ", "
+        << "\"" << results[kShipinStruct] << "\"" << ", "
+        << "\"" << results[kShipMode]     << "\"" << ", "
+        << "\"" << results[kComment]      << "\"" << ")";
 
     client.execute(sst.str());
     total_counts += 1;
@@ -879,11 +928,11 @@ void Update(Context& context, Mysql& client, int table_idx, int offset, int roun
     if (comm.size() > 100)
       comm = comm.substr(1);
     sst << "Update " << table << " set "
-	<< " L_SUPPKEY=" << to_string(sup) << ", "
-	<< " L_LINENUMBER=" << to_string(lin) << ", "
-	<< " L_COMMENT=" << "\"" << comm      << "\"" << " "
-	<< "where L_ORDERKEY = " << results[kOrderKey] << " and "
-	<< "L_PARTKEY = " << results[kPartKey];
+        << " L_SUPPKEY=" << to_string(sup) << ", "
+        << " L_LINENUMBER=" << to_string(lin) << ", "
+        << " L_COMMENT=" << "\"" << comm      << "\"" << " "
+        << "where L_ORDERKEY = " << results[kOrderKey] << " and "
+        << "L_PARTKEY = " << results[kPartKey];
 
     client.execute(sst.str());
     total_counts += 1;
@@ -1018,7 +1067,7 @@ void QueryExecutePrepared(Context& context, Mysql& client, MYSQL_STMT* stmt, int
 }
 
 MYSQL_RES* QueryExecuteAndReturn(Context& context, Mysql& client, const std::string& str_in, 
-				 int offset, int idx1, int idx2) {
+                                 int offset, int idx1, int idx2) {
   const string& line = contents[offset];
   std::vector<string> results;
   boost::split(results, line, [](char c){return c == '|';});
