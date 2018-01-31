@@ -84,6 +84,12 @@ enum query_t {
   kPart_Smaller,
   kSupp_Smaller
 };
+enum query_type_t {
+  kPrimary = 0,
+  kSecondary,
+  kSecondaryRange
+};
+
 typedef map<int, vector<MYSQL_STMT*>> I2PreparedStmts;
 typedef map<int, string> I2StrStmt;
 
@@ -476,17 +482,17 @@ void execute_query(int tid) {
     string table = TablePrefix + to_string(idx);
     string str_stmt;
     switch (cycle_item[cycle]) {
-    case 0:
+    case query_type_t::kPrimary:
       str_stmt = "select * from " + table +
         " where L_ORDERKEY = ? and L_PARTKEY = ?";
       QueryExecute(context, client, str_stmt, kOrderKey, kPartKey);
       break;
-    case 1:
+    case query_type_t::kSecondary:
       str_stmt = "select * from " + table +
         " where L_SUPPKEY = ? and L_PARTKEY = ?";
       QueryExecute(context, client, str_stmt, kSuppKey, kPartKey);
       break;
-    case 2:
+    case query_type_t::kSecondaryRange:
       switch (context.mt() % 3) {
       case 0:
         str_stmt = "select * from " + table +
@@ -537,13 +543,13 @@ void execute_query_prepared(int tid) {
     high_resolution_clock::time_point start = high_resolution_clock::now();
     int idx = context.mt() % table_cnt;
     switch (cycle_item[cycle]) {
-    case 0:
+    case query_type_t::kPrimary:
       QueryExecutePrepared(context, client, stmts[0][idx], kOrderKey, kPartKey);
       break;
-    case 1:
+    case query_type_t::kSecondary:
       QueryExecutePrepared(context, client, stmts[1][idx], kSuppKey, kPartKey);
       break;
-    case 2:
+    case query_type_t::kSecondaryRange:
       switch (2 + context.mt() % 3) {
       case 2:
         QueryExecutePrepared(context, client, stmts[2][idx], kPartKey, -1);
@@ -574,8 +580,7 @@ void execute_query_prepared(int tid) {
   }
 }
 
-void execute_query_verify(int tid) {
-  Context context;
+void execute_query_verify(Context& context, int tid) {
   Mysql client("port");
   if (!client.connect()) {
     printf("Query(): conn failed\n");
@@ -661,10 +666,6 @@ void StartStress() {
     case kUpdateRandomTest:
       testName = "[UpdateRandom] TPS";
       threads.push_back(std::thread(execute_update, i));
-      break;
-    case kVerifyData:
-      testName = "[VerifyData] TPS";
-      threads.push_back(std::thread(execute_query_verify, i));
       break;
     }
     printf("thread %d start. \n", i);
