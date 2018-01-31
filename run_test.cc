@@ -174,7 +174,7 @@ private:
             return prime;
         }
     }
-    for(size_t prime = (size | 1); prime < std::numeric_limits<uint32_t>::max(); prime += 2) {
+    for(size_t prime = (size | 1); prime < std::numeric_limits<uint64_t>::max(); prime += 2) {
         if(is_prime(prime) && ((prime - 1) % 101 != 0)) {
             return prime;
         }
@@ -188,30 +188,6 @@ private:
 };
 
 void Init(const string& inpath) {
-/*
-  std::vector<uint32_t> v;
-  std::vector<uint32_t> v2;
-  for (uint32_t i = 0; i < 2000000; ++i) {
-    v2.push_back(i);
-  }
-  for (int t = 0; t < 200; ++t) {
-    for (RandomIndex ri(2000000); !ri.eof(); ri.next()) {
-      v.push_back(ri.get());
-    }
-    for (uint32_t i = 0; i < 20; ++i) {
-      fprintf(stderr, "%d,", v[i]);
-    }
-    fprintf(stderr, "\n");
-    std::sort(v.begin(), v.end());
-    if (v != v2) {
-      fprintf(stderr, "mismatch !\n");
-      for (uint32_t i = 0; i < 20; ++i) {
-        fprintf(stderr, "%d,", v[i]);
-      }
-    }
-    v.clear();
-  }
-*/
   {
     char* pth_cnt = getenv("threadCount");
     if (pth_cnt)
